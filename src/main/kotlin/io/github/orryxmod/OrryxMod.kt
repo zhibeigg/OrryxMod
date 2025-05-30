@@ -1,7 +1,7 @@
 package io.github.orryxmod
 
 import io.github.orryxmod.core.FileManager
-import io.github.orryxmod.modules.PacketHandler
+import io.github.orryxmod.core.PacketHandler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -12,7 +12,6 @@ import net.minecraftforge.fml.common.network.FMLEventChannel
 import net.minecraftforge.fml.common.network.NetworkRegistry
 import org.apache.logging.log4j.LogManager
 import org.apache.logging.log4j.Logger
-
 
 @Mod(modid = OrryxMod.MOD_ID, name = OrryxMod.MOD_NAME, version = "1.0", acceptedMinecraftVersions = "[1.12.2]", useMetadata = true, clientSideOnly = true)
 class OrryxMod {
@@ -36,7 +35,7 @@ class OrryxMod {
 
     @Mod.EventHandler
     fun preInit(e: FMLPreInitializationEvent) {
-        network = NetworkRegistry.INSTANCE.newEventDrivenChannel("$MOD_ID:main")
+        network = NetworkRegistry.INSTANCE.newEventDrivenChannel("orryxmod:main")
         network.register(PacketHandler)
     }
 }

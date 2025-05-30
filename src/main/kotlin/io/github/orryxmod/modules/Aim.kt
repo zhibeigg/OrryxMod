@@ -2,7 +2,8 @@ package io.github.orryxmod.modules
 
 import io.github.orryxmod.api.Module
 import io.github.orryxmod.core.FileManager
-import io.github.orryxmod.modules.PacketHandler.sendDataPacket
+import io.github.orryxmod.core.PacketHandler
+import io.github.orryxmod.core.PacketHandler.sendDataPacket
 import io.github.orryxmod.util.MC
 import net.minecraft.client.renderer.BufferBuilder
 import net.minecraft.client.renderer.GlStateManager
@@ -205,13 +206,13 @@ object Aim : Module("Aim", description = "技能辅助瞄准") {
 
     class AimPacket(
         val skill: String,
-        val module: String = "default",
+        val picture: String = "default",
         val enable: Boolean,
         val scale: Double,
         val max: Double
     ) {
         override fun toString(): String {
-            return "AimPacket(skill=$skill, module=$module, enable=$enable, max=$max, scale=$scale)"
+            return "AimPacket(skill=$skill, picture=$picture, enable=$enable, max=$max, scale=$scale)"
         }
     }
 }

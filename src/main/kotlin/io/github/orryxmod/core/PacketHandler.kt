@@ -1,17 +1,21 @@
-package io.github.orryxmod.modules
+package io.github.orryxmod.core
 
 import com.google.common.io.ByteArrayDataOutput
 import com.google.common.io.ByteStreams
-import io.netty.buffer.Unpooled
 import io.github.orryxmod.OrryxMod
-import io.github.orryxmod.OrryxMod.Companion.MOD_ID
-import io.github.orryxmod.modules.Aim.AimPacket
+import io.github.orryxmod.modules.Aim
+import io.github.orryxmod.modules.EntityShow
+import io.github.orryxmod.modules.Flicker
+import io.github.orryxmod.modules.Ghost
+import io.github.orryxmod.modules.MouseCursor
+import io.github.orryxmod.modules.PlayerNavigation
 import io.github.orryxmod.util.MC
+import io.netty.buffer.Unpooled
 import net.minecraft.network.PacketBuffer
 import net.minecraftforge.fml.common.eventhandler.SubscribeEvent
 import net.minecraftforge.fml.common.network.FMLNetworkEvent
 import net.minecraftforge.fml.common.network.internal.FMLProxyPacket
-import java.util.*
+import java.util.UUID
 
 object PacketHandler {
 
@@ -40,10 +44,11 @@ object PacketHandler {
             buffer.readBytes(bytes)
             val input = ByteStreams.newDataInput(bytes)
 
-            if (packet.channel() == "$MOD_ID:main") {
+            if (packet.channel() == "orryxmod:main") {
                 val header = input.readInt()
                 when (header) {
                     PacketType.AimConfirm.header -> {
+                        OrryxMod.logger.info("Packet Receive AimConfirm")
                         val bool = input.readBoolean()
                         MC.addScheduledTask {
                             if (bool) {
@@ -54,7 +59,8 @@ object PacketHandler {
                         }
                     }
                     PacketType.AimRequest.header -> {
-                        val aimPacket = AimPacket(
+                        OrryxMod.logger.info("Packet Receive AimRequest")
+                        val aimPacket = Aim.AimPacket(
                             input.readUTF(),
                             input.readUTF(),
                             true,
@@ -64,12 +70,13 @@ object PacketHandler {
                         MC.addScheduledTask {
                             Aim.skill = aimPacket.skill
                             Aim.max = aimPacket.max
-                            Aim.module = aimPacket.module
+                            Aim.module = aimPacket.picture
                             Aim.scale = aimPacket.scale
                             Aim.enable = aimPacket.enable
                         }
                     }
                     PacketType.Ghost.header -> {
+                        OrryxMod.logger.info("Packet Receive Ghost")
                         val uuid = UUID.fromString(input.readUTF())
                         val timeout = input.readLong()
                         val density = input.readInt()
@@ -79,6 +86,7 @@ object PacketHandler {
                         }
                     }
                     PacketType.Flicker.header -> {
+                        OrryxMod.logger.info("Packet Receive Flicker")
                         val uuid = UUID.fromString(input.readUTF())
                         val timeout = input.readLong()
                         val alpha = input.readFloat()
@@ -87,6 +95,7 @@ object PacketHandler {
                         }
                     }
                     PacketType.MouseRequest.header -> {
+                        OrryxMod.logger.info("Packet Receive MouseRequest")
                         val show = input.readBoolean()
                         MC.addScheduledTask {
                             if (show) {
@@ -97,6 +106,7 @@ object PacketHandler {
                         }
                     }
                     PacketType.EntityShow.header -> {
+                        OrryxMod.logger.info("Packet Receive EntityShow")
                         val uuid = UUID.fromString(input.readUTF())
                         val id = input.readUTF()
                         val x = input.readDouble()
@@ -112,6 +122,7 @@ object PacketHandler {
                         }
                     }
                     PacketType.EntityShowRemove.header -> {
+                        OrryxMod.logger.info("Packet Receive EntityShowRemove")
                         val uuid = UUID.fromString(input.readUTF())
                         val group = input.readUTF()
                         MC.addScheduledTask {
@@ -119,6 +130,7 @@ object PacketHandler {
                         }
                     }
                     PacketType.PlayerNavigation.header -> {
+                        OrryxMod.logger.info("Packet Receive PlayerNavigation")
                         val x = input.readInt()
                         val y = input.readInt()
                         val z = input.readInt()
@@ -128,6 +140,7 @@ object PacketHandler {
                         }
                     }
                     PacketType.PlayerNavigationStop.header -> {
+                        OrryxMod.logger.info("Packet Receive PlayerNavigationStop")
                         MC.addScheduledTask {
                             PlayerNavigation.stop()
                         }
@@ -135,7 +148,7 @@ object PacketHandler {
                 }
             }
         } catch (ex: Exception) {
-            OrryxMod.logger.error("处理数据包时发生错误", ex)
+            OrryxMod.Companion.logger.error("处理数据包时发生错误", ex)
         }
     }
 
@@ -148,14 +161,14 @@ object PacketHandler {
                 writeInt(type.header)
                 block()
             }
-            OrryxMod.network.sendToServer(
+            OrryxMod.Companion.network.sendToServer(
                 FMLProxyPacket(
                     PacketBuffer(Unpooled.wrappedBuffer(output.toByteArray())),
-                    "$MOD_ID:main"
+                    "${OrryxMod.Companion.MOD_ID}:main"
                 )
             )
         } catch (ex: Exception) {
-            OrryxMod.logger.error("发送数据包失败: ${ex.message}")
+            OrryxMod.Companion.logger.error("发送数据包失败: ${ex.message}")
         }
     }
 }

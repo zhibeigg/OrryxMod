@@ -22,6 +22,7 @@ apply plugin: 'com.github.johnrengelman.shadow'
 
 version project.modVersion
 group project.modGroup
+buildDir project.build
 
 compileJava {
     sourceCompatibility = targetCompatibility = '1.8'
@@ -160,6 +161,10 @@ tasks.register('buildAll') {
     dependsOn 'buildApi'
     dependsOn 'buildApiSource'
     dependsOn 'build'
+}
+
+tasks.withType(Jar).configureEach {
+    destinationDirectory.set(buildDir)
 }
 
 shadowJar {

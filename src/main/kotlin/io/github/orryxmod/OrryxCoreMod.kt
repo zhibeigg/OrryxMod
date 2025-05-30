@@ -11,13 +11,11 @@ import org.spongepowered.asm.mixin.Mixins
 class OrryxCoreMod : IFMLLoadingPlugin {
 
     init {
-        val logger = LogManager.getLogger("OrryxMod")
-
         MixinBootstrap.init() // 初始化 Mixin
         Mixins.addConfigurations("mixins.orryxmod.json", "mixins.baritone.json")
 
         MixinEnvironment.getDefaultEnvironment().obfuscationContext = "searge"
-        logger.info("OrryxMod and Baritone mixins initialised. (${MixinEnvironment.getDefaultEnvironment().obfuscationContext})")
+        OrryxMod.logger.info("OrryxMod and Baritone mixins initialised. (${MixinEnvironment.getDefaultEnvironment().obfuscationContext})")
     }
 
     override fun getASMTransformerClass() = emptyArray<String>()

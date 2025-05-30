@@ -2,9 +2,7 @@ package io.github.orryxmod.util
 
 import baritone.api.BaritoneAPI
 import io.github.orryxmod.OrryxMod.Companion.scope
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.runBlocking
 import java.awt.Color
 
 object BaritoneUtils {
