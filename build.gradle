@@ -50,7 +50,7 @@ minecraft {
 
     runs {
         client {
-            workingDirectory project.file('run')
+            workingDirectory(file('run'))
 
             property 'fml.coreMods.load', 'io.github.orryxmod.OrryxCoreMod'
             property 'mixin.env.disableRefMap', 'true' // Disable refmap so we don't get trolled by Baritone
@@ -105,6 +105,8 @@ dependencies {
         exclude module: 'kotlin-stdlib-common'
     }
 
+    jarLibs("org.joml:joml:1.10.7")
+
     // Add them back to compileOnly (provided)
     compileOnly "org.jetbrains.kotlin:kotlin-stdlib-common:$kotlinVersion"
     compileOnly 'org.jetbrains:annotations:23.0.0'
@@ -121,11 +123,8 @@ dependencies {
 
 mixin {
     defaultObfuscationEnv 'searge'
-    sourceSets {
-        main {
-            ext.refMap = 'mixins.orryxmod.refmap.json'
-        }
-    }
+    add sourceSets.main, "mixins.orryxmod.refmap.json"
+    config 'mixins.orryxmod.json'
 }
 
 processResources {

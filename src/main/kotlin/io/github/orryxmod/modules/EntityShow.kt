@@ -1,9 +1,8 @@
 package io.github.orryxmod.modules
 
 import io.github.orryxmod.api.Module
+import io.github.orryxmod.modules.Aim.enable
 import io.github.orryxmod.util.MC
-import io.github.orryxmod.util.Vector3f
-import io.github.orryxmod.util.rotateY
 import net.minecraft.client.Minecraft
 import net.minecraft.client.renderer.GlStateManager
 import net.minecraft.client.renderer.OpenGlHelper
@@ -11,6 +10,7 @@ import net.minecraft.client.renderer.RenderHelper
 import net.minecraft.entity.EntityLivingBase
 import net.minecraftforge.client.event.RenderWorldLastEvent
 import net.minecraftforge.fml.common.eventhandler.SubscribeEvent
+import org.joml.Vector3f
 import java.util.*
 import kotlin.math.floor
 import kotlin.math.max
@@ -77,7 +77,7 @@ object EntityShow : Module("Show", description = "投影") {
 
     private fun doRenderEntityLiving(ent: EntityLivingBase, shadow: Shadow) {
         if (shadow.track.world != MC.world.worldInfo.worldName) return
-        val renderManager = Minecraft.getMinecraft().renderManager
+        val renderManager = MC.renderManager
         GlStateManager.enableColorMaterial()
         GlStateManager.pushMatrix()
         val shiftX: Double = shadow.track.x - renderManager.viewerPosX
@@ -140,5 +140,9 @@ object EntityShow : Module("Show", description = "投影") {
         GlStateManager.setActiveTexture(OpenGlHelper.lightmapTexUnit)
         GlStateManager.disableTexture2D()
         GlStateManager.setActiveTexture(OpenGlHelper.defaultTexUnit)
+    }
+
+    override fun test() {
+        addShadow(MC.player.uniqueID, "test", MC.player.posX, MC.player.posY, MC.player.posZ, 1000, 0f, 0f, 0f, 1f)
     }
 }

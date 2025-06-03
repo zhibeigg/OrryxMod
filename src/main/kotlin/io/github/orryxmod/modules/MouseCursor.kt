@@ -1,6 +1,7 @@
 package io.github.orryxmod.modules
 
 import io.github.orryxmod.api.Module
+import io.github.orryxmod.modules.Ghost.applyGhostEffect
 import io.github.orryxmod.util.MC
 
 object MouseCursor : Module("MouseCursor", description = "鼠标呼出") {
@@ -11,5 +12,9 @@ object MouseCursor : Module("MouseCursor", description = "鼠标呼出") {
 
     fun hide() {
         MC.mouseHelper.grabMouseCursor()
+    }
+
+    override fun test() {
+        show()
     }
 }

@@ -1,6 +1,7 @@
 package io.github.orryxmod.modules
 
 import io.github.orryxmod.api.Module
+import io.github.orryxmod.core.EntityTrackerRegistry
 import io.github.orryxmod.core.FileManager
 import io.github.orryxmod.util.MC
 import net.minecraft.client.entity.AbstractClientPlayer
@@ -181,5 +182,9 @@ object Flicker : Module("Flicker", description = "闪影") {
     // 判断是否为Alex模型
     private fun isSlimModel(player: EntityPlayer): Boolean {
         return (player is AbstractClientPlayer) && (player.skinType == "slim")
+    }
+
+    override fun test() {
+        applyFlickerEffect(MC.player.uniqueID, 1000, 0.5f)
     }
 }

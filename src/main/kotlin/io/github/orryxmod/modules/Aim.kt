@@ -5,14 +5,24 @@ import io.github.orryxmod.core.FileManager
 import io.github.orryxmod.core.PacketHandler
 import io.github.orryxmod.core.PacketHandler.sendDataPacket
 import io.github.orryxmod.util.MC
+import net.minecraft.block.state.IBlockState
+import net.minecraft.client.Minecraft
+import net.minecraft.client.renderer.BlockModelRenderer
 import net.minecraft.client.renderer.BufferBuilder
 import net.minecraft.client.renderer.GlStateManager
 import net.minecraft.client.renderer.Tessellator
+import net.minecraft.client.renderer.block.model.IBakedModel
 import net.minecraft.client.renderer.vertex.DefaultVertexFormats
+import net.minecraft.crash.CrashReport
+import net.minecraft.crash.CrashReportCategory
+import net.minecraft.util.ReportedException
 import net.minecraft.util.math.BlockPos
+import net.minecraft.util.math.MathHelper
 import net.minecraft.util.math.Vec3d
+import net.minecraft.world.IBlockAccess
 import net.minecraftforge.client.event.RenderWorldLastEvent
 import net.minecraftforge.fml.common.eventhandler.SubscribeEvent
+import net.minecraftforge.fml.common.network.FMLNetworkEvent
 import org.lwjgl.opengl.GL11
 
 
@@ -39,6 +49,13 @@ object Aim : Module("Aim", description = "技能辅助瞄准") {
 
     override fun test() {
         enable = !enable
+    }
+
+    @SubscribeEvent
+    fun clientLogoutEvent(event: FMLNetworkEvent.ClientDisconnectionFromServerEvent) {
+        if (!event.isCanceled) {
+            enable = false
+        }
     }
 
     private fun getLocation(tick: Float): Location {
@@ -209,10 +226,98 @@ object Aim : Module("Aim", description = "技能辅助瞄准") {
         val picture: String = "default",
         val enable: Boolean,
         val scale: Double,
-        val max: Double
+        val max: Double,
     ) {
         override fun toString(): String {
             return "AimPacket(skill=$skill, picture=$picture, enable=$enable, max=$max, scale=$scale)"
+        }
+    }
+
+
+    @SubscribeEvent
+    fun e(event: RenderWorldLastEvent) {
+        val player = MC.player
+
+        // 获取玩家脚下方块
+        val groundPos = BlockPos(player.posX, player.posY - 0.2, player.posZ)
+        val world = player.world
+        val groundState = world.getBlockState(groundPos)
+
+        // 跳过空气方块
+        if (groundState.block.isAir(groundState, world, groundPos)) return
+
+
+        // 计算头顶位置（Y偏移2.5个单位）
+        val x = player.lastTickPosX + (player.posX - player.lastTickPosX) * event.partialTicks
+        val y = player.lastTickPosY + (player.posY - player.lastTickPosY) * event.partialTicks + 2.5
+        val z = player.lastTickPosZ + (player.posZ - player.lastTickPosZ) * event.partialTicks
+
+        // 渲染方块
+        renderFloatingBlock(groundState, x - player.posX, y - player.posY, z - player.posZ, 1f)
+    }
+
+    private fun renderFloatingBlock(state: IBlockState, x: Double, y: Double, z: Double, scale: Float) {
+        GlStateManager.pushMatrix()
+        GlStateManager.enableBlend()
+        GlStateManager.blendFunc(GL11.GL_SRC_ALPHA, GL11.GL_ONE_MINUS_SRC_ALPHA)
+        GlStateManager.disableLighting()
+
+        GlStateManager.translate(x, y, z)
+        GlStateManager.rotate(((System.currentTimeMillis() / 20) % 360).toFloat(), 0f, 1f, 0f) // Y轴旋转动画
+        GlStateManager.translate(-0.5, -0.5, -0.5)
+        GlStateManager.scale(scale, scale, scale)
+        // 设置半透明效果
+        GlStateManager.color(1.0f, 1.0f, 1.0f, 0.7f)
+
+        val tessellator = Tessellator.getInstance()
+        val buffer = tessellator.buffer
+
+        // 开始渲染方块
+        buffer.begin(7, DefaultVertexFormats.BLOCK)
+        val blockrendererdispatcher = Minecraft.getMinecraft().blockRendererDispatcher
+
+        val modelIn = blockrendererdispatcher.getModelForState(state)
+        val pos = BlockPos(x, y, z)
+        val rand = MathHelper.getPositionRandom(pos)
+        val flag = Minecraft.isAmbientOcclusionEnabled() && state.getLightValue(MC.world, pos) == 0 && modelIn.isAmbientOcclusion(state)
+
+        blockrendererdispatcher.blockModelRenderer.renderBlock(MC.world,
+            blockrendererdispatcher.getModelForState(state),
+            state,
+            BlockPos.ORIGIN,
+            buffer,
+            false,
+            rand,
+            flag)
+        tessellator.draw()
+
+        // 恢复OpenGL状态
+        GlStateManager.enableLighting()
+        GlStateManager.disableBlend()
+        GlStateManager.popMatrix()
+    }
+
+    fun BlockModelRenderer.renderBlock(worldIn: IBlockAccess, modelIn: IBakedModel, stateIn: IBlockState, posIn: BlockPos, buffer: BufferBuilder, checkSides: Boolean, rand: Long, flag: Boolean): Boolean {
+        try {
+            return if (flag) {
+                this.renderModelSmooth(
+                    worldIn,
+                    modelIn,
+                    stateIn,
+                    posIn,
+                    buffer,
+                    checkSides,
+                    rand
+                )
+            } else {
+                this.renderModelFlat(worldIn, modelIn, stateIn, posIn, buffer, checkSides, rand)
+            }
+        } catch (throwable: Throwable) {
+            val crashreport = CrashReport.makeCrashReport(throwable, "Tesselating block model")
+            val crashreportcategory = crashreport.makeCategory("Block model being tesselated")
+            CrashReportCategory.addBlockInfo(crashreportcategory, posIn, stateIn)
+            crashreportcategory.addCrashSection("Using AO", flag)
+            throw ReportedException(crashreport)
         }
     }
 }

@@ -1,4 +1,4 @@
-package io.github.orryxmod.modules
+package io.github.orryxmod.core
 
 import net.minecraft.entity.player.EntityPlayer
 
