@@ -1,6 +1,5 @@
 package io.github.orryxmod.modules.fractureblock
 
-import io.github.orryxmod.OrryxMod
 import net.minecraft.client.Minecraft
 import net.minecraft.client.renderer.GlStateManager
 import net.minecraft.client.renderer.Tessellator
@@ -28,7 +27,6 @@ class RenderFractureBlock: TileEntitySpecialRenderer<FractureBlockTileEntity>() 
         alpha: Float,
     ) {
         val turnBackTime = 5.0f
-        OrryxMod.logger.info("$x $y $z")
         val lerpAmount = clamp(
             (blockEntity.lifeTime + partialTicks) / blockEntity.maxLifeTime.toFloat(),
             0.0f,
@@ -48,15 +46,11 @@ class RenderFractureBlock: TileEntitySpecialRenderer<FractureBlockTileEntity>() 
         val bouncingAnimation = max(-extender * (blockEntity.lifeTime + partialTicks - moveGraph).pow(2.0) + bounceMaxHeight, 0.0)
 
         GlStateManager.pushMatrix()
-        GlStateManager.enableRescaleNormal()
-        GlStateManager.depthMask(true)
-        GlStateManager.enableDepth()
 
-        GlStateManager.color(1.0f, 1.0f, 1.0f, 1.0f)
-        GlStateManager.translate(x + 0.5, y, z + 0.5) // 移动到方块中心
+        GlStateManager.translate(x + 0.5, y + 0.5, z + 0.5) // 移动到方块中心
         GlStateManager.rotate(Quaternion(rotate.x, rotate.y, rotate.z, rotate.w))
         GlStateManager.translate(translate.x.toDouble(), translate.y + bouncingAnimation, translate.z.toDouble())
-        GlStateManager.translate(-0.5, 0.0, -0.5)
+        GlStateManager.translate(-0.5,  -0.5, -0.5)
 
         val tessellator = Tessellator.getInstance()
         val buffer = tessellator.buffer
@@ -66,7 +60,7 @@ class RenderFractureBlock: TileEntitySpecialRenderer<FractureBlockTileEntity>() 
         val blockrendererdispatcher = Minecraft.getMinecraft().blockRendererDispatcher
 
         val state = blockEntity.originalBlockState
-        val rand = MathHelper.getCoordinateRandom(blockEntity.pos.x, blockEntity.pos.y, blockEntity.pos.z)
+        val rand = MathHelper.getPositionRandom(BlockPos(x, y, z))
 
         blockrendererdispatcher.blockModelRenderer.renderModelSmooth(
             world,

@@ -7,7 +7,6 @@ import net.minecraft.block.Block
 import net.minecraft.block.state.IBlockState
 import net.minecraft.util.EnumParticleTypes
 import net.minecraft.util.math.BlockPos
-import net.minecraft.world.GameRules
 import net.minecraft.world.World
 import net.minecraftforge.common.util.Constants
 import org.joml.Quaternionf
@@ -200,7 +199,6 @@ object Shockwave: Module("Shockwave", "地面冲击波") {
                     j,
                     i
                 )
-                OrryxMod.logger.info("x: $j z: $i")
                 j += if (i == zFrom || i == zTo) 1 else xTo - xFrom
             }
         }

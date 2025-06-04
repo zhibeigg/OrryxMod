@@ -4,7 +4,6 @@ import io.github.orryxmod.OrryxMod
 import net.minecraft.block.BlockContainer
 import net.minecraft.block.SoundType
 import net.minecraft.block.state.IBlockState
-import net.minecraft.client.Minecraft
 import net.minecraft.entity.Entity
 import net.minecraft.entity.EntityLivingBase
 import net.minecraft.entity.player.EntityPlayer
@@ -21,17 +20,25 @@ import net.minecraft.util.math.RayTraceResult
 import net.minecraft.world.Explosion
 import net.minecraft.world.IBlockAccess
 import net.minecraft.world.World
+import net.minecraftforge.fml.relauncher.Side
+import net.minecraftforge.fml.relauncher.SideOnly
+import java.util.concurrent.ConcurrentHashMap
 
 class FractureBlock() : BlockContainer(FractureMaterial()) {
 
     init {
+
         registryName = ResourceLocation(OrryxMod.MOD_ID, "FractureBlock")
         translucent = true
         defaultState = FractureBlockState(this) as IBlockState
     }
 
-    override fun createNewTileEntity(worldIn: World, meta: Int): TileEntity {
-        return FractureBlockTileEntity(defaultState as FractureBlockState)
+    val blockNodes: ConcurrentHashMap<BlockPos, BlockNode> = ConcurrentHashMap<BlockPos, BlockNode>()
+
+    fun copyState(pos: BlockPos, state: IBlockState) {
+        if (blockNodes.containsKey(pos)) return
+
+        blockNodes.put(pos, BlockNode(state))
     }
 
     override fun onBlockActivated(
@@ -45,12 +52,12 @@ class FractureBlock() : BlockContainer(FractureMaterial()) {
         hitY: Float,
         hitZ: Float,
     ): Boolean {
-        if (FractureBlockState.containsKey(pos)) {
-            val n = FractureBlockState.get(pos)
+        if (blockNodes.containsKey(pos)) {
+            val n: BlockNode = blockNodes[pos]!!
 
             return try {
-                n.block.onBlockActivated(worldIn, pos, state, playerIn, hand, side, hitX, hitY, hitZ)
-            } catch (_: Throwable) {
+                n.originalBlock.onBlockActivated(worldIn, pos, state, playerIn, hand, side, hitX, hitY, hitZ)
+            } catch (t: Throwable) {
                 false
             }
         }
@@ -60,10 +67,10 @@ class FractureBlock() : BlockContainer(FractureMaterial()) {
 
     override fun isNormalCube(state: IBlockState, world: IBlockAccess, pos: BlockPos): Boolean {
         try {
-            if (FractureBlockState.containsKey(pos)) {
-                val n = FractureBlockState.get(pos)
+            if (blockNodes.containsKey(pos)) {
+                val n: BlockNode = blockNodes[pos]!!
 
-                return n.isNormalCube
+                return n.state.isNormalCube
             }
         } catch (t: Throwable) {
             t.printStackTrace()
@@ -74,10 +81,10 @@ class FractureBlock() : BlockContainer(FractureMaterial()) {
 
     override fun isAir(state: IBlockState, world: IBlockAccess, pos: BlockPos): Boolean {
         try {
-            if (FractureBlockState.containsKey(pos)) {
-                val n = FractureBlockState.get(pos)
+            if (blockNodes.containsKey(pos)) {
+                val n: BlockNode = blockNodes[pos]!!
 
-                return n.block.isAir(state, world, pos)
+                return n.state.block.isAir(state, world, pos)
             }
         } catch (t: Throwable) {
             t.printStackTrace()
@@ -88,10 +95,10 @@ class FractureBlock() : BlockContainer(FractureMaterial()) {
 
     override fun isBed(state: IBlockState, world: IBlockAccess, pos: BlockPos, player: Entity?): Boolean {
         try {
-            if (FractureBlockState.containsKey(pos)) {
-                val n = FractureBlockState.get(pos)
+            if (blockNodes.containsKey(pos)) {
+                val n: BlockNode = blockNodes[pos]!!
 
-                return n.block.isBed(state, world, pos, player)
+                return n.state.block.isBed(state, world, pos, player)
             }
         } catch (t: Throwable) {
             t.printStackTrace()
@@ -102,10 +109,10 @@ class FractureBlock() : BlockContainer(FractureMaterial()) {
 
     override fun isBedFoot(world: IBlockAccess, pos: BlockPos): Boolean {
         try {
-            if (FractureBlockState.containsKey(pos)) {
-                val n = FractureBlockState.get(pos)
+            if (blockNodes.containsKey(pos)) {
+                val n: BlockNode = blockNodes[pos]!!
 
-                return n.block.isBedFoot(world, pos)
+                return n.state.block.isBedFoot(world, pos)
             }
         } catch (t: Throwable) {
             t.printStackTrace()
@@ -116,10 +123,10 @@ class FractureBlock() : BlockContainer(FractureMaterial()) {
 
     override fun isBurning(world: IBlockAccess, pos: BlockPos): Boolean {
         try {
-            if (FractureBlockState.containsKey(pos)) {
-                val n = FractureBlockState.get(pos)
+            if (blockNodes.containsKey(pos)) {
+                val n: BlockNode = blockNodes[pos]!!
 
-                return n.block.isBurning(world, pos)
+                return n.state.block.isBurning(world, pos)
             }
         } catch (t: Throwable) {
             t.printStackTrace()
@@ -130,10 +137,10 @@ class FractureBlock() : BlockContainer(FractureMaterial()) {
 
     override fun isFlammable(world: IBlockAccess, pos: BlockPos, face: EnumFacing): Boolean {
         try {
-            if (FractureBlockState.containsKey(pos)) {
-                val n = FractureBlockState.get(pos)
+            if (blockNodes.containsKey(pos)) {
+                val n: BlockNode = blockNodes[pos]!!
 
-                return n.block.isFlammable(world, pos, face)
+                return n.state.block.isFlammable(world, pos, face)
             }
         } catch (t: Throwable) {
             t.printStackTrace()
@@ -144,10 +151,10 @@ class FractureBlock() : BlockContainer(FractureMaterial()) {
 
     override fun isLadder(state: IBlockState, world: IBlockAccess, pos: BlockPos, entity: EntityLivingBase): Boolean {
         try {
-            if (FractureBlockState.containsKey(pos)) {
-                val n = FractureBlockState.get(pos)
+            if (blockNodes.containsKey(pos)) {
+                val n: BlockNode = blockNodes[pos]!!
 
-                return n.block.isLadder(state, world, pos, entity)
+                return n.state.block.isLadder(state, world, pos, entity)
             }
         } catch (t: Throwable) {
             t.printStackTrace()
@@ -158,10 +165,10 @@ class FractureBlock() : BlockContainer(FractureMaterial()) {
 
     override fun isReplaceable(worldIn: IBlockAccess, pos: BlockPos): Boolean {
         try {
-            if (FractureBlockState.containsKey(pos)) {
-                val n = FractureBlockState.get(pos)
+            if (blockNodes.containsKey(pos)) {
+                val n: BlockNode = blockNodes[pos]!!
 
-                return n.material.isReplaceable
+                return n.state.material.isReplaceable
             }
         } catch (t: Throwable) {
             t.printStackTrace()
@@ -172,10 +179,10 @@ class FractureBlock() : BlockContainer(FractureMaterial()) {
 
     override fun isPassable(worldIn: IBlockAccess, pos: BlockPos): Boolean {
         try {
-            if (FractureBlockState.containsKey(pos)) {
-                val n = FractureBlockState.get(pos)
+            if (blockNodes.containsKey(pos)) {
+                val n: BlockNode = blockNodes[pos]!!
 
-                return n.block.isPassable(worldIn, pos)
+                return n.originalBlock.isPassable(worldIn, pos)
             }
         } catch (t: Throwable) {
             t.printStackTrace()
@@ -185,10 +192,10 @@ class FractureBlock() : BlockContainer(FractureMaterial()) {
 
     override fun onEntityCollision(worldIn: World, pos: BlockPos, state: IBlockState, entityIn: Entity) {
         try {
-            if (FractureBlockState.containsKey(pos)) {
-                val n = FractureBlockState.get(pos)
+            if (blockNodes.containsKey(pos)) {
+                val n: BlockNode = blockNodes[pos]!!
 
-                n.block.onEntityCollision(worldIn, pos, state, entityIn)
+                n.originalBlock.onEntityCollision(worldIn, pos, state, entityIn)
             }
         } catch (t: Throwable) {
             t.printStackTrace()
@@ -198,10 +205,10 @@ class FractureBlock() : BlockContainer(FractureMaterial()) {
     @Deprecated("Deprecated in Java")
     override fun getCollisionBoundingBox(blockState: IBlockState, worldIn: IBlockAccess, pos: BlockPos): AxisAlignedBB? {
         try {
-            if (FractureBlockState.containsKey(pos)) {
-                val n = FractureBlockState.get(pos)
+            if (blockNodes.containsKey(pos)) {
+                val n: BlockNode = blockNodes[pos]!!
 
-                return n.getCollisionBoundingBox(worldIn, pos)
+                return n.state.getCollisionBoundingBox(worldIn, pos)
             }
         } catch (t: Throwable) {
             t.printStackTrace()
@@ -213,10 +220,10 @@ class FractureBlock() : BlockContainer(FractureMaterial()) {
     @Deprecated("Deprecated in Java")
     override fun getBoundingBox(blockState: IBlockState, worldIn: IBlockAccess, pos: BlockPos): AxisAlignedBB {
         try {
-            if (FractureBlockState.containsKey(pos)) {
-                val n = FractureBlockState.get(pos)
+            if (blockNodes.containsKey(pos)) {
+                val n: BlockNode = blockNodes[pos]!!
 
-                return n.getBoundingBox(worldIn, pos)
+                return n.state.getBoundingBox(worldIn, pos)
             }
         } catch (t: Throwable) {
             t.printStackTrace()
@@ -233,28 +240,16 @@ class FractureBlock() : BlockContainer(FractureMaterial()) {
     @Deprecated("Deprecated in Java")
     override fun getBlockHardness(blockState: IBlockState, w: World, pos: BlockPos): Float {
         try {
-            if (FractureBlockState.containsKey(pos)) {
-                val n = FractureBlockState.get(pos)
+            if (blockNodes.containsKey(pos)) {
+                val n: BlockNode = blockNodes[pos]!!
 
-                return n.getBlockHardness(w, pos)
+                return n.state.getBlockHardness(w, pos)
             }
         } catch (t: Throwable) {
             t.printStackTrace()
         }
 
         return blockState.getBlockHardness(w, pos)
-    }
-
-    override fun onBlockHarvested(worldIn: World, pos: BlockPos, state: IBlockState, player: EntityPlayer) {
-        try {
-            val node = FractureBlockState.get(pos)
-
-            if (worldIn.isRemote && state.block !== node.block && (worldIn.getBlockState(pos).block is FractureBlock || state.block is FractureBlock)) Minecraft.getMinecraft().effectRenderer.addBlockDestroyEffects(pos, node)
-
-            worldIn.removeTileEntity(pos)
-        } catch (t: Throwable) {
-            t.printStackTrace()
-        }
     }
 
     @Deprecated("Deprecated in Java")
@@ -268,56 +263,51 @@ class FractureBlock() : BlockContainer(FractureMaterial()) {
         b: Boolean,
     ) {
         try {
-            if (FractureBlockState.containsKey(pos)) {
-                FractureBlockState.get(pos).addCollisionBoxToList(
-                    worldIn,
-                    pos,
-                    entityBox,
-                    collidingBoxes,
-                    entityIn,
-                    b
-                )
-            }
+            if (blockNodes.containsKey(pos)) blockNodes.get(pos)!!.state.addCollisionBoxToList(
+                worldIn,
+                pos,
+                entityBox,
+                collidingBoxes,
+                entityIn,
+                b
+            )
         } catch (e: Exception) {
             throw RuntimeException(e)
         }
     }
 
     override fun getExplosionResistance(w: World, p: BlockPos, e: Entity?, ex: Explosion): Float {
-        if (FractureBlockState.containsKey(p)) return FractureBlockState.get(p).block.getExplosionResistance(w, p, e, ex)
+        if (blockNodes.containsKey(p)) return blockNodes.get(p)!!.originalBlock.getExplosionResistance(w, p, e, ex)
 
         return super.getExplosionResistance(w, p, e, ex)
     }
 
-    @Deprecated("Deprecated in Java")
     override fun getExplosionResistance(e: Entity): Float {
-        if (FractureBlockState.containsKey(e.position)) return FractureBlockState.get(e.getPosition()).block.getExplosionResistance(
-            e
-        )
+        if (blockNodes.containsKey(e.position)) return blockNodes.get(e.position)!!.originalBlock.getExplosionResistance(e)
 
         return super.getExplosionResistance(e)
     }
 
     override fun getEnchantPowerBonus(w: World, p: BlockPos): Float {
-        if (FractureBlockState.containsKey(p)) return FractureBlockState.get(p).block.getEnchantPowerBonus(w, p)
+        if (blockNodes.containsKey(p)) return blockNodes.get(p)!!.originalBlock.getEnchantPowerBonus(w, p)
 
         return super.getEnchantPowerBonus(w, p)
     }
 
     override fun getFlammability(world: IBlockAccess, pos: BlockPos, face: EnumFacing): Int {
-        if (FractureBlockState.containsKey(pos)) return FractureBlockState.get(pos).block.getFlammability(world, pos, face)
+        if (blockNodes.containsKey(pos)) return blockNodes.get(pos)!!.originalBlock.getFlammability(world, pos, face)
 
         return super.getFlammability(world, pos, face)
     }
 
     override fun getFireSpreadSpeed(world: IBlockAccess, pos: BlockPos, face: EnumFacing): Int {
-        if (FractureBlockState.containsKey(pos)) return FractureBlockState.get(pos).block.getFireSpreadSpeed(world, pos, face)
+        if (blockNodes.containsKey(pos)) return blockNodes.get(pos)!!.originalBlock.getFireSpreadSpeed(world, pos, face)
 
         return super.getFireSpreadSpeed(world, pos, face)
     }
 
     override fun getWeakChanges(world: IBlockAccess, pos: BlockPos): Boolean {
-        if (FractureBlockState.containsKey(pos)) return FractureBlockState.get(pos).block.getWeakChanges(world, pos)
+        if (blockNodes.containsKey(pos)) return blockNodes.get(pos)!!.originalBlock.getWeakChanges(world, pos)
 
         return super.getWeakChanges(world, pos)
     }
@@ -330,10 +320,10 @@ class FractureBlock() : BlockContainer(FractureMaterial()) {
         player: EntityPlayer,
     ): ItemStack {
         try {
-            if (FractureBlockState.containsKey(pos)) {
-                val node = FractureBlockState.get(pos)
+            if (blockNodes.containsKey(pos)) {
+                val node: BlockNode = blockNodes.get(pos)!!
 
-                if (node.block !== this && node.block === node.block) return FractureBlockState.get(pos).block.getPickBlock(node, target, world, pos, player)
+                if (node.originalBlock !== this && node.state.block === node.originalBlock) return blockNodes.get(pos)!!.originalBlock.getPickBlock(node.state, target, world, pos, player)
             }
         } catch (t: Throwable) {
             throw RuntimeException(t)
@@ -342,68 +332,61 @@ class FractureBlock() : BlockContainer(FractureMaterial()) {
         return ItemStack(Blocks.AIR)
     }
 
-    @Deprecated("Deprecated in Java")
     override fun getWeakPower(
         blockState: IBlockState,
         blockAccess: IBlockAccess,
         pos: BlockPos,
         side: EnumFacing,
     ): Int {
-        if (FractureBlockState.containsKey(pos)) return FractureBlockState.get(pos).getWeakPower(blockAccess, pos, side)
+        if (blockNodes.containsKey(pos)) return blockNodes.get(pos)!!.state.getWeakPower(blockAccess, pos, side)
 
         return 0
     }
 
     override fun canPlaceTorchOnTop(state: IBlockState, world: IBlockAccess, pos: BlockPos): Boolean {
-        if (FractureBlockState.containsKey(pos)) return FractureBlockState.get(pos).block.canPlaceTorchOnTop(state, world, pos)
+        if (blockNodes.containsKey(pos)) return blockNodes.get(pos)!!.originalBlock.canPlaceTorchOnTop(state, world, pos)
 
         return true
     }
 
     override fun canPlaceBlockAt(worldIn: World, pos: BlockPos): Boolean {
-        if (FractureBlockState.containsKey(pos)) return FractureBlockState.get(pos).block.canPlaceBlockAt(worldIn, pos)
+        if (blockNodes.containsKey(pos)) return blockNodes.get(pos)!!.originalBlock.canPlaceBlockAt(worldIn, pos)
 
         return false
     }
 
     override fun canPlaceBlockOnSide(worldIn: World, pos: BlockPos, side: EnumFacing): Boolean {
-        if (FractureBlockState.containsKey(pos)) return FractureBlockState.get(pos).block.canPlaceBlockOnSide(
-            worldIn,
-            pos,
-            side
-        )
+        if (blockNodes.containsKey(pos)) return blockNodes.get(pos)!!.originalBlock.canPlaceBlockOnSide(worldIn, pos, side)
 
         return false
     }
 
     override fun getExtendedState(s: IBlockState, w: IBlockAccess, p: BlockPos): IBlockState {
-        if (FractureBlockState.containsKey(p)) return FractureBlockState.get(p).block.getExtendedState(s, w, p)
+        if (blockNodes.containsKey(p)) return blockNodes.get(p)!!.originalBlock.getExtendedState(s, w, p)
 
         return super.getExtendedState(s, w, p)
     }
 
     override fun getSoundType(state: IBlockState, world: World, pos: BlockPos, entity: Entity?): SoundType {
-        if (!FractureBlockState.containsKey(pos)) return SoundType.STONE
+        if (!blockNodes.containsKey(pos)) return SoundType.STONE
 
-        val n = FractureBlockState.get(pos)
+        val n: BlockNode = blockNodes.get(pos)!!
 
-        return n.block.getSoundType(n, world, pos, entity)
+        return n.state.block.getSoundType(n.state, world, pos, entity)
     }
 
     override fun canConnectRedstone(s: IBlockState, w: IBlockAccess, pos: BlockPos, side: EnumFacing?): Boolean {
-        if (FractureBlockState.containsKey(pos)) return FractureBlockState.get(pos).block.canConnectRedstone(s, w, pos, side)
+        if (blockNodes.containsKey(pos)) return blockNodes.get(pos)!!.originalBlock.canConnectRedstone(s, w, pos, side)
 
         return false
     }
 
     override fun onNeighborChange(w: IBlockAccess, pos: BlockPos, p: BlockPos) {
-        if (FractureBlockState.containsKey(pos)) return FractureBlockState.get(pos).block.onNeighborChange(w, pos, p)
-        super.onNeighborChange(w, pos, p)
+        if (blockNodes.containsKey(pos)) blockNodes.get(pos)!!.originalBlock.onNeighborChange(w, pos, p)
     }
 
     override fun onBlockAdded(worldIn: World, pos: BlockPos, state: IBlockState) {
-        if (FractureBlockState.containsKey(pos)) return FractureBlockState.get(pos).block.onBlockAdded(worldIn, pos, state)
-        super.onBlockAdded(worldIn, pos, state)
+        if (blockNodes.containsKey(pos)) blockNodes.get(pos)!!.originalBlock.onBlockAdded(worldIn, pos, state)
     }
 
     @Deprecated("Deprecated in Java")
@@ -413,34 +396,34 @@ class FractureBlock() : BlockContainer(FractureMaterial()) {
         state: IBlockState,
         fortune: Int,
     ): MutableList<ItemStack?> {
-        if (FractureBlockState.containsKey(pos)) return FractureBlockState.get(pos).block.getDrops(world, pos, state, fortune)
+        if (blockNodes.containsKey(pos)) return blockNodes.get(pos)!!.originalBlock.getDrops(world, pos, state, fortune)
 
         return super.getDrops(world, pos, state, fortune)
     }
 
     override fun getExpDrop(state: IBlockState, world: IBlockAccess, pos: BlockPos, fortune: Int): Int {
-        if (FractureBlockState.containsKey(pos)) return FractureBlockState.get(pos).block.getExpDrop(state, world, pos, fortune)
+        if (blockNodes.containsKey(pos)) return blockNodes.get(pos)!!.originalBlock.getExpDrop(state, world, pos, fortune)
 
         return super.getExpDrop(state, world, pos, fortune)
     }
 
     override fun getRenderType(state: IBlockState): EnumBlockRenderType {
-        return EnumBlockRenderType.MODEL
+        return EnumBlockRenderType.INVISIBLE
+    }
+
+    override fun isOpaqueCube(state: IBlockState): Boolean {
+        return false
     }
 
     @Deprecated("Deprecated in Java")
-    override fun isOpaqueCube(state: IBlockState): Boolean {
-        return true
+    @SideOnly(Side.CLIENT)
+    override fun getAmbientOcclusionLightValue(state: IBlockState): Float {
+        return 1.0f
     }
 
     @Deprecated("Deprecated in Java")
     override fun isSideSolid(baseState: IBlockState, world: IBlockAccess, pos: BlockPos, side: EnumFacing): Boolean {
-        if (FractureBlockState.containsKey(pos)) return FractureBlockState.get(pos).block.isSideSolid(
-            baseState,
-            world,
-            pos,
-            side
-        )
+        if (blockNodes.containsKey(pos)) return blockNodes.get(pos)!!.originalBlock.isSideSolid(baseState, world, pos, side)
 
         return true
     }
@@ -449,28 +432,16 @@ class FractureBlock() : BlockContainer(FractureMaterial()) {
         state: IBlockState,
         world: IBlockAccess,
         pos: BlockPos,
-        face: EnumFacing
+        face: EnumFacing,
     ): Boolean {
         // 仅当有原始方块状态时才委托
-        if (FractureBlockState.containsKey(pos)) {
-            return FractureBlockState.get(pos).block.doesSideBlockRendering(state, world, pos, face)
+        if (OrryxMod.FractureBlock.blockNodes.containsKey(pos)) {
+            return OrryxMod.FractureBlock.blockNodes.get(pos)!!.originalBlock.doesSideBlockRendering(state, world, pos, face)
         }
         return false // 默认不阻挡渲染
     }
 
-    // 添加光照值委托
-    override fun getLightValue(state: IBlockState, world: IBlockAccess, pos: BlockPos): Int {
-        if (FractureBlockState.containsKey(pos)) {
-            return FractureBlockState.get(pos).block.getLightValue(state, world, pos)
-        }
-        return super.getLightValue(state, world, pos)
-    }
-
-    // 添加光照不透明度委托
-    override fun getLightOpacity(state: IBlockState, world: IBlockAccess, pos: BlockPos): Int {
-        if (FractureBlockState.containsKey(pos)) {
-            return FractureBlockState.get(pos).block.getLightOpacity(state, world, pos)
-        }
-        return super.getLightOpacity(state, world, pos)
+    override fun createNewTileEntity(worldIn: World, meta: Int): TileEntity? {
+        return FractureBlockTileEntity(defaultState as FractureBlockState)
     }
 }

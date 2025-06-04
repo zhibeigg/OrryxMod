@@ -1,21 +1,16 @@
 package io.github.orryxmod.modules.fractureblock
 
 import com.google.common.collect.ImmutableMap
+import io.github.orryxmod.OrryxMod
 import it.unimi.dsi.fastutil.ints.Int2ObjectMap
 import it.unimi.dsi.fastutil.ints.Int2ObjectOpenHashMap
-import net.minecraft.block.Block
 import net.minecraft.block.material.MapColor
 import net.minecraft.block.properties.IProperty
-import net.minecraft.block.state.BlockFaceShape
 import net.minecraft.block.state.BlockStateContainer
 import net.minecraft.block.state.IBlockState
-import net.minecraft.entity.Entity
 import net.minecraft.util.EnumFacing
-import net.minecraft.util.math.AxisAlignedBB
 import net.minecraft.util.math.BlockPos
-import net.minecraft.util.math.Vec3d
 import net.minecraft.world.IBlockAccess
-import net.minecraft.world.World
 import org.joml.Quaternionf
 import org.joml.Vector3f
 
@@ -26,27 +21,6 @@ class FractureBlockState(block: FractureBlock): BlockStateContainer.StateImpleme
     private var bouncing = 0.0
     private var maxLifeTime = 0
 
-    companion object {
-
-        val ORIGINAL_BLOCK_STATE_CACHE: Int2ObjectMap<IBlockState> = Int2ObjectOpenHashMap()
-
-        fun remove(blockPos: BlockPos) {
-            ORIGINAL_BLOCK_STATE_CACHE.remove(blockPos.hashCode())
-        }
-
-        fun get(blockPos: BlockPos): IBlockState {
-            return ORIGINAL_BLOCK_STATE_CACHE.get(blockPos.hashCode())
-        }
-
-        fun containsKey(blockPos: BlockPos): Boolean {
-            return ORIGINAL_BLOCK_STATE_CACHE.containsKey(blockPos.hashCode())
-        }
-
-        fun reset() {
-            ORIGINAL_BLOCK_STATE_CACHE.clear()
-        }
-    }
-
     fun setFractureInfo(
         bp: BlockPos,
         originalState: IBlockState,
@@ -55,7 +29,8 @@ class FractureBlockState(block: FractureBlock): BlockStateContainer.StateImpleme
         bouncing: Double,
         maxLifeTime: Int,
     ) {
-        ORIGINAL_BLOCK_STATE_CACHE.put(bp.hashCode(), originalState)
+        OrryxMod.FractureBlock.copyState(bp, originalState)
+
         this.translate = translate
         this.rotation = rotation
         this.bouncing = bouncing
@@ -71,7 +46,7 @@ class FractureBlockState(block: FractureBlock): BlockStateContainer.StateImpleme
     }
 
     fun getOriginalBlockState(blockPos: BlockPos): IBlockState {
-        return ORIGINAL_BLOCK_STATE_CACHE.get(blockPos.hashCode())
+        return OrryxMod.FractureBlock.blockNodes[blockPos]!!.state
     }
 
     fun getBouncing(): Double {
@@ -87,17 +62,17 @@ class FractureBlockState(block: FractureBlock): BlockStateContainer.StateImpleme
     }
 
     override fun getLightValue(world: IBlockAccess, pos: BlockPos): Int {
-        if (containsKey(pos)) return get(pos).getLightValue(world, pos)
+        if (OrryxMod.FractureBlock.blockNodes.containsKey(pos)) return OrryxMod.FractureBlock.blockNodes.get(pos)!!.state.getLightValue(world, pos)
         return super.getLightValue(world, pos)
     }
 
     override fun getMapColor(world: IBlockAccess, pos: BlockPos): MapColor {
-        if (containsKey(pos)) return get(pos).getMapColor(world, pos)
+        if (OrryxMod.FractureBlock.blockNodes.containsKey(pos)) return OrryxMod.FractureBlock.blockNodes.get(pos)!!.state.getMapColor(world, pos)
         return super.getMapColor(world, pos)
     }
 
     override fun getLightOpacity(world: IBlockAccess, pos: BlockPos): Int {
-        if (containsKey(pos)) return get(pos).getLightOpacity(world, pos)
+        if (OrryxMod.FractureBlock.blockNodes.containsKey(pos)) return OrryxMod.FractureBlock.blockNodes.get(pos)!!.state.getLightOpacity(world, pos)
         return super.getLightOpacity(world, pos)
     }
 
@@ -106,7 +81,7 @@ class FractureBlockState(block: FractureBlock): BlockStateContainer.StateImpleme
     }
 
     override fun getPackedLightmapCoords(worldIn: IBlockAccess, pos: BlockPos): Int {
-        if (containsKey(pos)) return get(pos).getPackedLightmapCoords(worldIn, pos)
+        if (OrryxMod.FractureBlock.blockNodes.containsKey(pos)) return OrryxMod.FractureBlock.blockNodes.get(pos)!!.state.getPackedLightmapCoords(worldIn, pos)
         return super.getPackedLightmapCoords(worldIn, pos)
     }
 }

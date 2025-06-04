@@ -1,5 +1,6 @@
 package io.github.orryxmod.modules.fractureblock
 
+import io.github.orryxmod.OrryxMod
 import io.github.orryxmod.util.MC
 import net.minecraft.block.Block
 import net.minecraft.block.state.IBlockState
@@ -7,13 +8,12 @@ import net.minecraft.client.particle.ParticleDigging
 import net.minecraft.tileentity.TileEntity
 import net.minecraft.util.EnumParticleTypes
 import net.minecraft.util.ITickable
-import net.minecraft.util.math.AxisAlignedBB
 import net.minecraftforge.common.util.Constants
 import org.joml.Quaternionf
 import org.joml.Vector3f
 import java.util.*
 
-class FractureBlockTileEntity(val fractureBlockState: FractureBlockState): TileEntity(), ITickable {
+class FractureBlockTileEntity(fractureBlockState: FractureBlockState): TileEntity(), ITickable {
 
     val translate: Vector3f = fractureBlockState.getTranslate()!!
     val rotation: Quaternionf = fractureBlockState.getRotation()!!
@@ -31,7 +31,7 @@ class FractureBlockTileEntity(val fractureBlockState: FractureBlockState): TileE
                     EnumParticleTypes.BLOCK_CRACK.particleID,
                     world,
                     pos.x.toDouble(),
-                    pos.y.toDouble(),
+                    pos.y.toDouble() + 1,
                     pos.z.toDouble(),
                     (Math.random() - 0.5) * 0.3,
                     Math.random() * 0.5,
@@ -46,7 +46,7 @@ class FractureBlockTileEntity(val fractureBlockState: FractureBlockState): TileE
             if (lifeTime++ > maxLifeTime) {
                 world.removeTileEntity(pos)
                 world.setBlockState(pos, originalBlockState, Constants.BlockFlags.RERENDER_MAIN_THREAD)
-                FractureBlockState.remove(pos)
+                OrryxMod.FractureBlock.blockNodes.remove(pos)
             }
         }
     }
