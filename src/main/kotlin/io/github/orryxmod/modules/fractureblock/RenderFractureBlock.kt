@@ -1,14 +1,13 @@
 package io.github.orryxmod.modules.fractureblock
 
 import io.github.orryxmod.OrryxMod
-import io.github.orryxmod.util.MC
 import net.minecraft.client.Minecraft
 import net.minecraft.client.renderer.GlStateManager
 import net.minecraft.client.renderer.Tessellator
-import net.minecraft.client.renderer.texture.TextureMap
 import net.minecraft.client.renderer.tileentity.TileEntitySpecialRenderer
 import net.minecraft.client.renderer.vertex.DefaultVertexFormats
 import net.minecraft.util.math.BlockPos
+import net.minecraft.util.math.MathHelper
 import org.joml.Math.clamp
 import org.joml.Quaternionf
 import org.joml.Vector3f
@@ -28,12 +27,10 @@ class RenderFractureBlock: TileEntitySpecialRenderer<FractureBlockTileEntity>() 
         destroyStage: Int,
         alpha: Float,
     ) {
-        super.render(blockEntity, x, y, z, partialTicks, destroyStage, alpha)
-        OrryxMod.logger.info("Render Fracture block tile entity")
         val turnBackTime = 5.0f
-        // 插值计算
-        val lerpAmount: Float = clamp(
-            partialTicks * (1.0f / turnBackTime) + (turnBackTime - (blockEntity.maxLifeTime - blockEntity.lifeTime)) * (1.0f / turnBackTime),
+        OrryxMod.logger.info("$x $y $z")
+        val lerpAmount = clamp(
+            (blockEntity.lifeTime + partialTicks) / blockEntity.maxLifeTime.toFloat(),
             0.0f,
             1.0f
         )
@@ -50,12 +47,16 @@ class RenderFractureBlock: TileEntitySpecialRenderer<FractureBlockTileEntity>() 
         val moveGraph = sqrt(bounceMaxHeight / extender)
         val bouncingAnimation = max(-extender * (blockEntity.lifeTime + partialTicks - moveGraph).pow(2.0) + bounceMaxHeight, 0.0)
 
-        this.bindTexture(TextureMap.LOCATION_BLOCKS_TEXTURE)
         GlStateManager.pushMatrix()
-        GlStateManager.translate(0.5, 0.5, 0.5)
+        GlStateManager.enableRescaleNormal()
+        GlStateManager.depthMask(true)
+        GlStateManager.enableDepth()
+
+        GlStateManager.color(1.0f, 1.0f, 1.0f, 1.0f)
+        GlStateManager.translate(x + 0.5, y, z + 0.5) // 移动到方块中心
         GlStateManager.rotate(Quaternion(rotate.x, rotate.y, rotate.z, rotate.w))
         GlStateManager.translate(translate.x.toDouble(), translate.y + bouncingAnimation, translate.z.toDouble())
-        GlStateManager.translate(-0.5, -0.5, -0.5)
+        GlStateManager.translate(-0.5, 0.0, -0.5)
 
         val tessellator = Tessellator.getInstance()
         val buffer = tessellator.buffer
@@ -63,13 +64,18 @@ class RenderFractureBlock: TileEntitySpecialRenderer<FractureBlockTileEntity>() 
         // 开始渲染方块
         buffer.begin(7, DefaultVertexFormats.BLOCK)
         val blockrendererdispatcher = Minecraft.getMinecraft().blockRendererDispatcher
-        blockrendererdispatcher.blockModelRenderer.renderModel(
-            MC.world,
-            blockrendererdispatcher.getModelForState(blockEntity.originalBlockState),
-            blockEntity.originalBlockState,
-            BlockPos(x, y, z),
+
+        val state = blockEntity.originalBlockState
+        val rand = MathHelper.getCoordinateRandom(blockEntity.pos.x, blockEntity.pos.y, blockEntity.pos.z)
+
+        blockrendererdispatcher.blockModelRenderer.renderModelSmooth(
+            world,
+            blockrendererdispatcher.getModelForState(state),
+            state,
+            BlockPos.ORIGIN,
             buffer,
-            false
+            false,
+            rand
         )
         tessellator.draw()
 

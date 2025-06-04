@@ -233,9 +233,7 @@ object Aim : Module("Aim", description = "技能辅助瞄准") {
         }
     }
 
-
-    @SubscribeEvent
-    fun e(event: RenderWorldLastEvent) {
+    fun renderBlock(event: RenderWorldLastEvent) {
         val player = MC.player
 
         // 获取玩家脚下方块
@@ -245,7 +243,6 @@ object Aim : Module("Aim", description = "技能辅助瞄准") {
 
         // 跳过空气方块
         if (groundState.block.isAir(groundState, world, groundPos)) return
-
 
         // 计算头顶位置（Y偏移2.5个单位）
         val x = player.lastTickPosX + (player.posX - player.lastTickPosX) * event.partialTicks

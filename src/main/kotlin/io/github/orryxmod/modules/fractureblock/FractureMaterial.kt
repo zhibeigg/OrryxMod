@@ -6,10 +6,10 @@ import net.minecraft.block.material.Material
 class FractureMaterial: Material(MapColor.AIR) {
 
     override fun isSolid(): Boolean {
-        return false
+        return true
     }
 
     override fun blocksLight(): Boolean {
-        return false
+        return true
     }
 }

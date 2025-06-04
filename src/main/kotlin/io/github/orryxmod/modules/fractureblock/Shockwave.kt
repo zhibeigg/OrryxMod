@@ -7,7 +7,9 @@ import net.minecraft.block.Block
 import net.minecraft.block.state.IBlockState
 import net.minecraft.util.EnumParticleTypes
 import net.minecraft.util.math.BlockPos
+import net.minecraft.world.GameRules
 import net.minecraft.world.World
+import net.minecraftforge.common.util.Constants
 import org.joml.Quaternionf
 import org.joml.Vector3d
 import org.joml.Vector3f
@@ -16,7 +18,7 @@ import kotlin.math.*
 object Shockwave: Module("Shockwave", "地面冲击波") {
 
     override fun test() {
-        circleSlamFracture(MC.world, Vector3d(MC.player.posX, MC.player.posY-0.2, MC.player.posZ), 2.0)
+        circleSlamFracture(MC.world, Vector3d(MC.player.posX, MC.player.posY-0.2, MC.player.posZ), 10.0)
     }
 
     // 冲击波方向 (向下)
@@ -57,7 +59,6 @@ object Shockwave: Module("Shockwave", "地面冲击波") {
         for (z in zFrom..zTo) {
             for (x in xFrom..xTo) {
                 val blockCenter = Vector3d(x + 0.5, center.y, z + 0.5)
-                OrryxMod.logger.info("isBlockOverlapLine: ${isBlockOverlapLine(blockCenter, center, edgeOfShockwave)}")
                 if (isBlockOverlapLine(blockCenter, center, edgeOfShockwave)) {
                     affectedBlocks.add(BlockPos(x, center.y.toInt(), z))
                 }
@@ -75,36 +76,37 @@ object Shockwave: Module("Shockwave", "地面冲击波") {
             var finalPos = BlockPos(pos.x, currentY, pos.z)
             var state = world.getBlockState(finalPos)
 
+            if (state is FractureBlockState) continue
+
             // 处理方块上方
-            val abovePos = finalPos.up()
-            val aboveState = world.getBlockState(abovePos)
-
-            if (canTransferShockwave(world, abovePos, aboveState)) {
-                val aboveTwoPos = abovePos.up()
-                val aboveTwoState = world.getBlockState(aboveTwoPos)
-
-                if (!canTransferShockwave(world, aboveTwoPos, aboveTwoState)) {
-                    currentY++
-                    finalPos = abovePos
-                    state = aboveState
-                } else {
-                    break
-                }
-            }
-
-            // 处理当前方块
-            if (!canTransferShockwave(world, finalPos, state)) {
-                val belowPos = finalPos.down()
-                val belowState = world.getBlockState(belowPos)
-
-                if (canTransferShockwave(world, belowPos, belowState)) {
-                    currentY--
-                    finalPos = belowPos
-                    state = belowState
-                } else {
-                    break
-                }
-            }
+//            val abovePos = finalPos.up()
+//            val aboveState = world.getBlockState(abovePos)
+//
+//            if (canTransferShockwave(world, abovePos, aboveState)) {
+//                val aboveTwoPos = abovePos.up()
+//                val aboveTwoState = world.getBlockState(aboveTwoPos)
+//
+//                OrryxMod.logger.info("!canTransferShockwave ${!canTransferShockwave(world, aboveTwoPos, aboveTwoState)}")
+//                if (!canTransferShockwave(world, aboveTwoPos, aboveTwoState)) {
+//                    currentY++
+//                    finalPos = abovePos
+//                    state = aboveState
+//                } else {
+//                    break
+//                }
+//            } else {
+//                val belowPos = finalPos.down()
+//                val belowState = world.getBlockState(belowPos)
+//
+//                OrryxMod.logger.info("canTransferShockwave ${canTransferShockwave(world, belowPos, belowState)}")
+//                if (canTransferShockwave(world, belowPos, belowState)) {
+//                    currentY--
+//                    finalPos = belowPos
+//                    state = belowState
+//                } else {
+//                    break
+//                }
+//            }
 
             // 距离检查
             val blockCenter = Vector3d(
@@ -113,12 +115,11 @@ object Shockwave: Module("Shockwave", "地面冲击波") {
                 finalPos.z + 0.5
             )
             val centerToBlock = blockCenter.sub(center, Vector3d())
-            val distance = sqrt(centerToBlock.x * centerToBlock.x + centerToBlock.z * centerToBlock.z)
+            val distance = centerToBlock.length()
 
             if (distance > length) continue
 
             // 客户端渲染断裂效果
-            OrryxMod.logger.info("world.isRemote ${world.isRemote}")
             if (world.isRemote) {
                 if (!canTransferShockwave(world, finalPos, state)) {
                     continue
@@ -154,9 +155,7 @@ object Shockwave: Module("Shockwave", "地面冲击波") {
                 createFractureEffect(world, finalPos, state, translator, rotator, bouncing, lifetime)
 
                 // 生成粒子
-                if (state.block.canSpawnInBlock()) {
-                    spawnBreakParticles(world, finalPos, state)
-                }
+                spawnBreakParticles(world, finalPos, state)
             }
         }
     }
@@ -201,6 +200,7 @@ object Shockwave: Module("Shockwave", "地面冲击波") {
                     j,
                     i
                 )
+                OrryxMod.logger.info("x: $j z: $i")
                 j += if (i == zFrom || i == zTo) 1 else xTo - xFrom
             }
         }
@@ -219,14 +219,16 @@ object Shockwave: Module("Shockwave", "地面冲击波") {
         lineStart: Vector3d,
         lineEnd: Vector3d,
     ): Boolean {
-        // 计算点到线段的最短距离
+        // 线段起点 --> 终点
         val lineVec = lineEnd.sub(lineStart, Vector3d())
+        // 线段起点 --> 方块原点
         val pointVec = blockCenter.sub(lineStart, Vector3d())
+        // 线段长度
         val lineLengthSquared = lineVec.lengthSquared()
 
         // 如果线段长度为0，则直接计算点到点的距离
         if (lineLengthSquared < 1e-7) {
-            return blockCenter.distance(lineStart) < 0.7
+            return blockCenter.distanceSquared(lineStart) < 0.7 * 0.7
         }
 
         // 计算投影比例
@@ -247,7 +249,6 @@ object Shockwave: Module("Shockwave", "地面冲击波") {
         pos: BlockPos,
         state: IBlockState,
     ): Boolean {
-        OrryxMod.logger.info("$pos isOpaqueCube: ${state.isOpaqueCube} isAir: ${!state.block.isAir(state, world, pos)}")
         return state.isOpaqueCube && !state.block.isAir(state, world, pos)
     }
 
@@ -292,8 +293,7 @@ object Shockwave: Module("Shockwave", "地面冲击波") {
         val fractureBlockState: FractureBlockState = OrryxMod.FractureBlock.defaultState as FractureBlockState
         fractureBlockState.setFractureInfo(pos, state, translation, rotation, bounce, lifetime)
 
-        world.setBlockState(pos, fractureBlockState, 0)
-        OrryxMod.logger.info("Created Fracture effect $pos")
+        world.setBlockState(pos, fractureBlockState, Constants.BlockFlags.RERENDER_MAIN_THREAD)
     }
 
     /**
