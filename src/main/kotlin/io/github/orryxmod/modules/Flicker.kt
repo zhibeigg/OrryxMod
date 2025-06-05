@@ -62,7 +62,7 @@ object Flicker : Module("Flicker", description = "闪影") {
     }
 
     @SubscribeEvent
-    fun renderPlayerGhost(event: RenderPlayerEvent.Post) {
+    fun renderPlayerFlick(event: RenderPlayerEvent.Post) {
         val player = event.entityPlayer ?: return
 
         // 保存原始渲染状态

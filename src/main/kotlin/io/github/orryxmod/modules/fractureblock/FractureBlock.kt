@@ -282,6 +282,7 @@ class FractureBlock() : BlockContainer(FractureMaterial()) {
         return super.getExplosionResistance(w, p, e, ex)
     }
 
+    @Deprecated("Deprecated in Java")
     override fun getExplosionResistance(e: Entity): Float {
         if (blockNodes.containsKey(e.position)) return blockNodes.get(e.position)!!.originalBlock.getExplosionResistance(e)
 
@@ -326,67 +327,138 @@ class FractureBlock() : BlockContainer(FractureMaterial()) {
                 if (node.originalBlock !== this && node.state.block === node.originalBlock) return blockNodes.get(pos)!!.originalBlock.getPickBlock(node.state, target, world, pos, player)
             }
         } catch (t: Throwable) {
-            throw RuntimeException(t)
+            t.printStackTrace()
         }
 
         return ItemStack(Blocks.AIR)
     }
 
+    @Deprecated("Deprecated in Java")
     override fun getWeakPower(
         blockState: IBlockState,
         blockAccess: IBlockAccess,
         pos: BlockPos,
         side: EnumFacing,
     ): Int {
-        if (blockNodes.containsKey(pos)) return blockNodes.get(pos)!!.state.getWeakPower(blockAccess, pos, side)
+        try {
+            if (blockNodes.containsKey(pos)) {
+                val n: BlockNode = blockNodes[pos]!!
+
+                return n.state.getWeakPower(blockAccess, pos, side)
+            }
+        } catch (t: Throwable) {
+            t.printStackTrace()
+        }
 
         return 0
     }
 
     override fun canPlaceTorchOnTop(state: IBlockState, world: IBlockAccess, pos: BlockPos): Boolean {
-        if (blockNodes.containsKey(pos)) return blockNodes.get(pos)!!.originalBlock.canPlaceTorchOnTop(state, world, pos)
+        try {
+            if (blockNodes.containsKey(pos)) {
+                val n: BlockNode = blockNodes[pos]!!
+
+                return n.originalBlock.canPlaceTorchOnTop(state, world, pos)
+            }
+        } catch (t: Throwable) {
+            t.printStackTrace()
+        }
 
         return true
     }
 
     override fun canPlaceBlockAt(worldIn: World, pos: BlockPos): Boolean {
-        if (blockNodes.containsKey(pos)) return blockNodes.get(pos)!!.originalBlock.canPlaceBlockAt(worldIn, pos)
+        try {
+            if (blockNodes.containsKey(pos)) {
+                val n: BlockNode = blockNodes[pos]!!
+
+                return n.originalBlock.canPlaceBlockAt(worldIn, pos)
+            }
+        } catch (t: Throwable) {
+            t.printStackTrace()
+        }
 
         return false
     }
 
     override fun canPlaceBlockOnSide(worldIn: World, pos: BlockPos, side: EnumFacing): Boolean {
-        if (blockNodes.containsKey(pos)) return blockNodes.get(pos)!!.originalBlock.canPlaceBlockOnSide(worldIn, pos, side)
+        try {
+            if (blockNodes.containsKey(pos)) {
+                val n: BlockNode = blockNodes[pos]!!
+
+                return n.originalBlock.canPlaceBlockOnSide(worldIn, pos, side)
+            }
+        } catch (t: Throwable) {
+            t.printStackTrace()
+        }
 
         return false
     }
 
     override fun getExtendedState(s: IBlockState, w: IBlockAccess, p: BlockPos): IBlockState {
-        if (blockNodes.containsKey(p)) return blockNodes.get(p)!!.originalBlock.getExtendedState(s, w, p)
+        try {
+            if (blockNodes.containsKey(p)) {
+                val n: BlockNode = blockNodes[p]!!
+
+                return n.originalBlock.getExtendedState(s, w, p)
+            }
+        } catch (t: Throwable) {
+            t.printStackTrace()
+        }
 
         return super.getExtendedState(s, w, p)
     }
 
     override fun getSoundType(state: IBlockState, world: World, pos: BlockPos, entity: Entity?): SoundType {
-        if (!blockNodes.containsKey(pos)) return SoundType.STONE
+        try {
+            if (blockNodes.containsKey(pos)) {
+                val n: BlockNode = blockNodes[pos]!!
 
-        val n: BlockNode = blockNodes.get(pos)!!
+                return n.originalBlock.getSoundType(n.state, world, pos, entity)
+            }
+        } catch (t: Throwable) {
+            t.printStackTrace()
+        }
 
-        return n.state.block.getSoundType(n.state, world, pos, entity)
+        return super.getSoundType(state, world, pos, entity)
     }
 
     override fun canConnectRedstone(s: IBlockState, w: IBlockAccess, pos: BlockPos, side: EnumFacing?): Boolean {
-        if (blockNodes.containsKey(pos)) return blockNodes.get(pos)!!.originalBlock.canConnectRedstone(s, w, pos, side)
+        try {
+            if (blockNodes.containsKey(pos)) {
+                val n: BlockNode = blockNodes[pos]!!
+
+                return n.originalBlock.canConnectRedstone(s, w, pos, side)
+            }
+        } catch (t: Throwable) {
+            t.printStackTrace()
+        }
 
         return false
     }
 
     override fun onNeighborChange(w: IBlockAccess, pos: BlockPos, p: BlockPos) {
-        if (blockNodes.containsKey(pos)) blockNodes.get(pos)!!.originalBlock.onNeighborChange(w, pos, p)
+        try {
+            if (blockNodes.containsKey(pos)) {
+                val n: BlockNode = blockNodes[pos]!!
+
+                return n.originalBlock.onNeighborChange(w, pos, p)
+            }
+        } catch (t: Throwable) {
+            t.printStackTrace()
+        }
     }
 
     override fun onBlockAdded(worldIn: World, pos: BlockPos, state: IBlockState) {
-        if (blockNodes.containsKey(pos)) blockNodes.get(pos)!!.originalBlock.onBlockAdded(worldIn, pos, state)
+        try {
+            if (blockNodes.containsKey(pos)) {
+                val n: BlockNode = blockNodes[pos]!!
+
+                return n.originalBlock.onBlockAdded(worldIn, pos, state)
+            }
+        } catch (t: Throwable) {
+            t.printStackTrace()
+        }
     }
 
     @Deprecated("Deprecated in Java")
@@ -396,13 +468,29 @@ class FractureBlock() : BlockContainer(FractureMaterial()) {
         state: IBlockState,
         fortune: Int,
     ): MutableList<ItemStack?> {
-        if (blockNodes.containsKey(pos)) return blockNodes.get(pos)!!.originalBlock.getDrops(world, pos, state, fortune)
+        try {
+            if (blockNodes.containsKey(pos)) {
+                val n: BlockNode = blockNodes[pos]!!
+
+                return n.originalBlock.getDrops(world, pos, state, fortune)
+            }
+        } catch (t: Throwable) {
+            t.printStackTrace()
+        }
 
         return super.getDrops(world, pos, state, fortune)
     }
 
     override fun getExpDrop(state: IBlockState, world: IBlockAccess, pos: BlockPos, fortune: Int): Int {
-        if (blockNodes.containsKey(pos)) return blockNodes.get(pos)!!.originalBlock.getExpDrop(state, world, pos, fortune)
+        try {
+            if (blockNodes.containsKey(pos)) {
+                val n: BlockNode = blockNodes[pos]!!
+
+                return n.originalBlock.getExpDrop(state, world, pos, fortune)
+            }
+        } catch (t: Throwable) {
+            t.printStackTrace()
+        }
 
         return super.getExpDrop(state, world, pos, fortune)
     }
@@ -411,6 +499,7 @@ class FractureBlock() : BlockContainer(FractureMaterial()) {
         return EnumBlockRenderType.INVISIBLE
     }
 
+    @Deprecated("Deprecated in Java")
     override fun isOpaqueCube(state: IBlockState): Boolean {
         return false
     }
@@ -423,7 +512,15 @@ class FractureBlock() : BlockContainer(FractureMaterial()) {
 
     @Deprecated("Deprecated in Java")
     override fun isSideSolid(baseState: IBlockState, world: IBlockAccess, pos: BlockPos, side: EnumFacing): Boolean {
-        if (blockNodes.containsKey(pos)) return blockNodes.get(pos)!!.originalBlock.isSideSolid(baseState, world, pos, side)
+        try {
+            if (blockNodes.containsKey(pos)) {
+                val n: BlockNode = blockNodes[pos]!!
+
+                return n.state.isSideSolid(world, pos, side)
+            }
+        } catch (t: Throwable) {
+            t.printStackTrace()
+        }
 
         return true
     }
@@ -434,10 +531,6 @@ class FractureBlock() : BlockContainer(FractureMaterial()) {
         pos: BlockPos,
         face: EnumFacing,
     ): Boolean {
-        // 仅当有原始方块状态时才委托
-        if (OrryxMod.FractureBlock.blockNodes.containsKey(pos)) {
-            return OrryxMod.FractureBlock.blockNodes.get(pos)!!.originalBlock.doesSideBlockRendering(state, world, pos, face)
-        }
         return false // 默认不阻挡渲染
     }
 

@@ -8,7 +8,6 @@ import net.minecraft.block.state.IBlockState
 import net.minecraft.util.EnumParticleTypes
 import net.minecraft.util.math.BlockPos
 import net.minecraft.world.World
-import net.minecraftforge.common.util.Constants
 import org.joml.Quaternionf
 import org.joml.Vector3d
 import org.joml.Vector3f
@@ -17,7 +16,8 @@ import kotlin.math.*
 object Shockwave: Module("Shockwave", "地面冲击波") {
 
     override fun test() {
-        circleSlamFracture(MC.world, Vector3d(MC.player.posX, MC.player.posY-0.2, MC.player.posZ), 10.0)
+        OrryxMod.logger.info("yaw ${MC.player.rotationYaw}")
+        squareSlamFracture(MC.world, Vector3d(MC.player.posX, MC.player.posY-0.2, MC.player.posZ), 10.0, 5.0, MC.player.rotationYaw.toDouble())
     }
 
     // 冲击波方向 (向下)
@@ -77,35 +77,36 @@ object Shockwave: Module("Shockwave", "地面冲击波") {
 
             if (state is FractureBlockState) continue
 
-            // 处理方块上方
-//            val abovePos = finalPos.up()
-//            val aboveState = world.getBlockState(abovePos)
-//
-//            if (canTransferShockwave(world, abovePos, aboveState)) {
-//                val aboveTwoPos = abovePos.up()
-//                val aboveTwoState = world.getBlockState(aboveTwoPos)
-//
-//                OrryxMod.logger.info("!canTransferShockwave ${!canTransferShockwave(world, aboveTwoPos, aboveTwoState)}")
-//                if (!canTransferShockwave(world, aboveTwoPos, aboveTwoState)) {
-//                    currentY++
-//                    finalPos = abovePos
-//                    state = aboveState
-//                } else {
-//                    break
-//                }
-//            } else {
-//                val belowPos = finalPos.down()
-//                val belowState = world.getBlockState(belowPos)
-//
-//                OrryxMod.logger.info("canTransferShockwave ${canTransferShockwave(world, belowPos, belowState)}")
-//                if (canTransferShockwave(world, belowPos, belowState)) {
-//                    currentY--
-//                    finalPos = belowPos
-//                    state = belowState
-//                } else {
-//                    break
-//                }
-//            }
+            // 处理方块上方传递
+            val abovePos = finalPos.up()
+            val aboveState = world.getBlockState(abovePos)
+
+            if (canTransferShockwave(world, abovePos, aboveState)) {
+                val aboveTwoPos = abovePos.up()
+                val aboveTwoState = world.getBlockState(aboveTwoPos)
+
+                if (!canTransferShockwave(world, aboveTwoPos, aboveTwoState)) {
+                    currentY++
+                    finalPos = abovePos
+                    state = aboveState
+                } else {
+                    break
+                }
+            }
+
+            // 处理方块下方传递
+            if (!canTransferShockwave(world, finalPos, state)) {
+                val belowPos = finalPos.down()
+                val belowState = world.getBlockState(belowPos)
+
+                if (canTransferShockwave(world, belowPos, belowState)) {
+                    currentY--
+                    finalPos = belowPos
+                    state = belowState
+                } else {
+                    break
+                }
+            }
 
             // 距离检查
             val blockCenter = Vector3d(
@@ -131,7 +132,7 @@ object Shockwave: Module("Shockwave", "地面冲击波") {
                 // 计算位移和旋转
                 val translator = Vector3f(
                     0f,
-                    max(0f, (distance / length).toFloat() - 0.5f) * 0.5f,
+                    max(0f, (distance / length).toFloat() - 0.5f) * 0.8f,
                     0f
                 )
 
@@ -148,7 +149,7 @@ object Shockwave: Module("Shockwave", "地面冲击波") {
 
                 // 计算弹跳效果
                 val bouncing = distance.pow(2) * bounceExponentCoef
-                val lifetime = 30 + world.rand.nextInt((length * 80).toInt())
+                val lifetime = (length * 20).toInt() + world.rand.nextInt(30)
 
                 // 创建断裂效果
                 createFractureEffect(world, finalPos, state, translator, rotator, bouncing, lifetime)
@@ -159,13 +160,18 @@ object Shockwave: Module("Shockwave", "地面冲击波") {
         }
     }
 
-    fun circleSlamFracture(world: World, center: Vector3d, radius: Double): Boolean {
-        var center = center
-        var radius = radius
+    fun squareSlamFracture(x: Double, y: Double, z: Double, length: Double, width: Double, yaw: Double): Boolean {
+        return squareSlamFracture(MC.world, Vector3d(x, y, z), length, width, yaw)
+    }
+
+    fun squareSlamFracture(world: World, center: Vector3d, length: Double, width: Double, yaw: Double): Boolean {
+        val length = max(0.5, length)
+        val width = max(0.5, width)
+
         val closestEdge = Vector3d(center.x.roundToInt().toDouble(), floor(center.y), center.z.roundToInt().toDouble())
         val centerOfBlock = Vector3d(floor(center.x) + 0.5, floor(center.y), floor(center.z) + 0.5)
 
-        center = if (closestEdge.distanceSquared(center) < centerOfBlock.distanceSquared(center)) {
+        val center = if (closestEdge.distanceSquared(center) < centerOfBlock.distanceSquared(center)) {
             closestEdge
         } else {
             centerOfBlock
@@ -178,7 +184,51 @@ object Shockwave: Module("Shockwave", "地面冲击波") {
             return false
         }
 
-        radius = max(0.5, radius)
+        // 扩散方向
+        val direction = Vector3d(0.0, 0.0, 1.0).rotateY(Math.toRadians(-yaw))
+        // 左右偏移方向
+        val offsetDir = Vector3d(0.0, 1.0, 0.0).cross(direction)
+
+        val offsetL = (-width/2).toInt()
+        val offsetR = (width/2).toInt()
+
+        for (i in offsetL..offsetR) {
+            val newCenter = center.add(offsetDir.normalize(i.toDouble(), Vector3d()), Vector3d())
+            val edge = newCenter.add(direction.normalize(length, Vector3d()), Vector3d())
+            spreadShockwave(
+                world,
+                newCenter,
+                direction,
+                length,
+                edge.x.toInt(),
+                edge.z.toInt()
+            )
+        }
+
+        return true
+    }
+
+    fun circleSlamFracture(x: Double, y: Double, z: Double, radius: Double): Boolean {
+        return circleSlamFracture(MC.world, Vector3d(x, y, z), radius)
+    }
+
+    fun circleSlamFracture(world: World, center: Vector3d, radius: Double): Boolean {
+        val radius = max(0.5, radius)
+        val closestEdge = Vector3d(center.x.roundToInt().toDouble(), floor(center.y), center.z.roundToInt().toDouble())
+        val centerOfBlock = Vector3d(floor(center.x) + 0.5, floor(center.y), floor(center.z) + 0.5)
+
+        val center = if (closestEdge.distanceSquared(center) < centerOfBlock.distanceSquared(center)) {
+            closestEdge
+        } else {
+            centerOfBlock
+        }
+
+        val blockPos = BlockPos(center.x, center.y, center.z)
+        val originBlockState = world.getBlockState(blockPos)
+
+        if (!canTransferShockwave(world, blockPos, originBlockState)) {
+            return false
+        }
 
         val xFrom = floor(center.x - radius).toInt()
         val xTo = ceil(center.x + radius).toInt()
@@ -260,7 +310,7 @@ object Shockwave: Module("Shockwave", "地面冲击波") {
     ) {
         repeat(8) {
             val offsetX = world.rand.nextDouble()
-            val offsetY = world.rand.nextDouble() * 0.5 + 0.5
+            val offsetY = world.rand.nextDouble() * 0.5 + 1
             val offsetZ = world.rand.nextDouble()
 
             world.spawnParticle(
@@ -291,7 +341,11 @@ object Shockwave: Module("Shockwave", "地面冲击波") {
         val fractureBlockState: FractureBlockState = OrryxMod.FractureBlock.defaultState as FractureBlockState
         fractureBlockState.setFractureInfo(pos, state, translation, rotation, bounce, lifetime)
 
-        world.setBlockState(pos, fractureBlockState, Constants.BlockFlags.RERENDER_MAIN_THREAD)
+        world.setBlockState(pos, fractureBlockState, 2)
+
+        val c = MC.world.getChunk(pos)
+        c.resetRelightChecks()
+        c.isLightPopulated = true
     }
 
     /**

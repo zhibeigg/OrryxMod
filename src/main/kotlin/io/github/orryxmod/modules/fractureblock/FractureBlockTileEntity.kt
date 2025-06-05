@@ -8,15 +8,19 @@ import net.minecraft.client.particle.ParticleDigging
 import net.minecraft.tileentity.TileEntity
 import net.minecraft.util.EnumParticleTypes
 import net.minecraft.util.ITickable
-import net.minecraftforge.common.util.Constants
+import net.minecraft.util.math.AxisAlignedBB
+import net.minecraft.util.math.BlockPos
+import net.minecraft.util.math.MathHelper
+import net.minecraft.world.World
 import org.joml.Quaternionf
 import org.joml.Vector3f
 import java.util.*
 
-class FractureBlockTileEntity(fractureBlockState: FractureBlockState): TileEntity(), ITickable {
+class FractureBlockTileEntity(val fractureBlockState: FractureBlockState): TileEntity(), ITickable {
 
     val translate: Vector3f = fractureBlockState.getTranslate()!!
     val rotation: Quaternionf = fractureBlockState.getRotation()!!
+    val seed = MathHelper.getPositionRandom(pos)
 
     val originalBlockState: IBlockState by lazy { fractureBlockState.getOriginalBlockState(pos) }
 
@@ -27,12 +31,17 @@ class FractureBlockTileEntity(fractureBlockState: FractureBlockState): TileEntit
     override fun update() {
         if (world.isRemote) {
             if (maxLifeTime - lifeTime < 10) {
+
+                val offsetX = world.rand.nextDouble()
+                val offsetY = world.rand.nextDouble() * 0.5 + 1
+                val offsetZ = world.rand.nextDouble()
+
                 val blockParticle = ParticleDigging.Factory().createParticle(
                     EnumParticleTypes.BLOCK_CRACK.particleID,
                     world,
-                    pos.x.toDouble(),
-                    pos.y.toDouble() + 1,
-                    pos.z.toDouble(),
+                    pos.x.toDouble() + offsetX,
+                    pos.y.toDouble() + offsetY,
+                    pos.z.toDouble() + offsetZ,
                     (Math.random() - 0.5) * 0.3,
                     Math.random() * 0.5,
                     (Math.random() - 0.5) * 0.3,
@@ -44,14 +53,29 @@ class FractureBlockTileEntity(fractureBlockState: FractureBlockState): TileEntit
                 MC.effectRenderer.addEffect(blockParticle)
             }
             if (lifeTime++ > maxLifeTime) {
-                world.removeTileEntity(pos)
-                world.setBlockState(pos, originalBlockState, Constants.BlockFlags.RERENDER_MAIN_THREAD)
+                world.setBlockState(pos, originalBlockState, 2)
                 OrryxMod.FractureBlock.blockNodes.remove(pos)
+
+                val c = MC.world.getChunk(pos)
+                c.resetRelightChecks()
+                c.isLightPopulated = true
             }
         }
     }
 
+    override fun getMaxRenderDistanceSquared(): Double {
+        return 4096.0
+    }
+
+    override fun getRenderBoundingBox(): AxisAlignedBB {
+        return INFINITE_EXTENT_AABB
+    }
+
     override fun shouldRenderInPass(pass: Int): Boolean {
         return true
+    }
+
+    override fun shouldRefresh(world: World, pos: BlockPos, oldState: IBlockState, newSate: IBlockState): Boolean {
+        return newSate != oldState
     }
 }

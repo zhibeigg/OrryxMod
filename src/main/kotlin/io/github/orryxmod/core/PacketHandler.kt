@@ -9,6 +9,7 @@ import io.github.orryxmod.modules.Flicker
 import io.github.orryxmod.modules.Ghost
 import io.github.orryxmod.modules.MouseCursor
 import io.github.orryxmod.modules.PlayerNavigation
+import io.github.orryxmod.modules.fractureblock.Shockwave
 import io.github.orryxmod.util.MC
 import io.netty.buffer.Unpooled
 import net.minecraft.network.PacketBuffer
@@ -32,6 +33,7 @@ object PacketHandler {
         data object EntityShowRemove : PacketType(9)
         data object PlayerNavigation : PacketType(10)
         data object PlayerNavigationStop : PacketType(11)
+        data object Shockwave : PacketType(12)
     }
 
     @SubscribeEvent
@@ -143,6 +145,16 @@ object PacketHandler {
                         OrryxMod.logger.info("Packet Receive PlayerNavigationStop")
                         MC.addScheduledTask {
                             PlayerNavigation.stop()
+                        }
+                    }
+                    PacketType.Shockwave.header -> {
+                        OrryxMod.logger.info("Packet Receive Shockwave")
+                        val x = input.readDouble()
+                        val y = input.readDouble()
+                        val z = input.readDouble()
+                        val r = input.readDouble()
+                        MC.addScheduledTask {
+                            Shockwave.circleSlamFracture(x, y, z, r)
                         }
                     }
                 }
