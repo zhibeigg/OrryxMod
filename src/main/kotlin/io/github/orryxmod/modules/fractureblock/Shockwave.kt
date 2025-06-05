@@ -208,6 +208,10 @@ object Shockwave: Module("Shockwave", "地面冲击波") {
         return true
     }
 
+    fun sectorSlamFracture(x: Double, y: Double, z: Double, radius: Double, angle: Double): Boolean {
+        return circleSlamFracture(MC.world, Vector3d(x, y, z), radius)
+    }
+
     fun circleSlamFracture(x: Double, y: Double, z: Double, radius: Double): Boolean {
         return circleSlamFracture(MC.world, Vector3d(x, y, z), radius)
     }

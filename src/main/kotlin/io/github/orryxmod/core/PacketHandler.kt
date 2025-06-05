@@ -33,7 +33,9 @@ object PacketHandler {
         data object EntityShowRemove : PacketType(9)
         data object PlayerNavigation : PacketType(10)
         data object PlayerNavigationStop : PacketType(11)
-        data object Shockwave : PacketType(12)
+        data object SquareShockwave : PacketType(12)
+        data object CircleShockwave : PacketType(13)
+        data object SectorShockwave : PacketType(14)
     }
 
     @SubscribeEvent
@@ -147,14 +149,37 @@ object PacketHandler {
                             PlayerNavigation.stop()
                         }
                     }
-                    PacketType.Shockwave.header -> {
-                        OrryxMod.logger.info("Packet Receive Shockwave")
+                    PacketType.SquareShockwave.header -> {
+                        OrryxMod.logger.info("Packet Receive SquareShockwave")
+                        val x = input.readDouble()
+                        val y = input.readDouble()
+                        val z = input.readDouble()
+                        val length = input.readDouble()
+                        val width = input.readDouble()
+                        val yaw = input.readDouble()
+                        MC.addScheduledTask {
+                            Shockwave.squareSlamFracture(x, y, z, length, width, yaw)
+                        }
+                    }
+                    PacketType.CircleShockwave.header -> {
+                        OrryxMod.logger.info("Packet Receive CircleShockwave")
                         val x = input.readDouble()
                         val y = input.readDouble()
                         val z = input.readDouble()
                         val r = input.readDouble()
                         MC.addScheduledTask {
                             Shockwave.circleSlamFracture(x, y, z, r)
+                        }
+                    }
+                    PacketType.SectorShockwave.header -> {
+                        OrryxMod.logger.info("Packet Receive SectorShockwave")
+                        val x = input.readDouble()
+                        val y = input.readDouble()
+                        val z = input.readDouble()
+                        val r = input.readDouble()
+                        val angle = input.readDouble()
+                        MC.addScheduledTask {
+                            Shockwave.sectorSlamFracture(x, y, z, r, angle)
                         }
                     }
                 }
