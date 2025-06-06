@@ -208,8 +208,57 @@ object Shockwave: Module("Shockwave", "地面冲击波") {
         return true
     }
 
-    fun sectorSlamFracture(x: Double, y: Double, z: Double, radius: Double, angle: Double): Boolean {
-        return circleSlamFracture(MC.world, Vector3d(x, y, z), radius)
+    fun sectorSlamFracture(x: Double, y: Double, z: Double, radius: Double, angle: Double, yaw: Double): Boolean {
+        return sectorSlamFracture(MC.world, Vector3d(x, y, z), radius, angle, yaw)
+    }
+
+    fun sectorSlamFracture(world: World, center: Vector3d, radius: Double, angle: Double, yaw: Double): Boolean {
+        val radius = max(0.5, radius)
+        val closestEdge = Vector3d(center.x.roundToInt().toDouble(), floor(center.y), center.z.roundToInt().toDouble())
+        val centerOfBlock = Vector3d(floor(center.x) + 0.5, floor(center.y), floor(center.z) + 0.5)
+
+        val center = if (closestEdge.distanceSquared(center) < centerOfBlock.distanceSquared(center)) {
+            closestEdge
+        } else {
+            centerOfBlock
+        }
+
+        val blockPos = BlockPos(center.x, center.y, center.z)
+        val originBlockState = world.getBlockState(blockPos)
+
+        if (!canTransferShockwave(world, blockPos, originBlockState)) {
+            return false
+        }
+
+        // 扩散中线方向
+        val midDirection = Vector3d(0.0, 0.0, 1.0).rotateY(Math.toRadians(-yaw))
+
+        val xFrom = floor(center.x - radius).toInt()
+        val xTo = ceil(center.x + radius).toInt()
+        val zFrom = floor(center.z - radius).toInt()
+        val zTo = ceil(center.z + radius).toInt()
+
+        // 遍历正方形边缘
+        for (i in zFrom..zTo) {
+            var j = xFrom
+            while (j <= xTo) {
+                // 得到径向向外扩散向量
+                val direction = Vector3d(j - center.x + 0.1, 0.0, i - center.z)
+                if (direction.angle(midDirection) <= Math.toRadians(angle/2)) {
+                    spreadShockwave(
+                        world,
+                        center,
+                        direction,
+                        radius,
+                        j,
+                        i
+                    )
+                }
+                j += if (i == zFrom || i == zTo) 1 else xTo - xFrom
+            }
+        }
+
+        return true
     }
 
     fun circleSlamFracture(x: Double, y: Double, z: Double, radius: Double): Boolean {

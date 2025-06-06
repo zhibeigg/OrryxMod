@@ -177,9 +177,10 @@ object PacketHandler {
                         val y = input.readDouble()
                         val z = input.readDouble()
                         val r = input.readDouble()
+                        val yaw = input.readDouble()
                         val angle = input.readDouble()
                         MC.addScheduledTask {
-                            Shockwave.sectorSlamFracture(x, y, z, r, angle)
+                            Shockwave.sectorSlamFracture(x, y, z, r, angle, yaw)
                         }
                     }
                 }
