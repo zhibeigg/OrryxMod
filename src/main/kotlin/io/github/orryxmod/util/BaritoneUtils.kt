@@ -32,8 +32,8 @@ object BaritoneUtils {
         scope.launch {
             settings?.apply {
                 println("settings load BaritoneUtils")
-                chatControl.value = true
-                chatControlAnyway.value = true
+                chatControl.value = false
+                chatControlAnyway.value = false
                 prefixControl.value = false
                 renderPathAsLine.value = false
                 renderGoalAnimated.value = true

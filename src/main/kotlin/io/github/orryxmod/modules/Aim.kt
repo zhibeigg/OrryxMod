@@ -23,15 +23,7 @@ import net.minecraft.world.IBlockAccess
 import net.minecraftforge.client.event.RenderWorldLastEvent
 import net.minecraftforge.fml.common.eventhandler.SubscribeEvent
 import net.minecraftforge.fml.common.network.FMLNetworkEvent
-import org.joml.Math.clamp
-import org.joml.Quaternionf
-import org.joml.Vector3f
 import org.lwjgl.opengl.GL11
-import org.lwjgl.util.vector.Quaternion
-import kotlin.math.max
-import kotlin.math.pow
-import kotlin.math.sqrt
-
 
 object Aim : Module("Aim", description = "技能辅助瞄准") {
 
