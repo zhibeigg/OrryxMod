@@ -4,7 +4,11 @@ import io.github.orryxmod.OrryxMod
 import io.github.orryxmod.core.api.DependsOn
 import io.github.orryxmod.core.api.Feature
 import io.github.orryxmod.core.api.FeatureBase
-import org.reflections.Reflections
+import io.github.orryxmod.feature.aim.AimFeature
+import io.github.orryxmod.feature.effect.EffectFeature
+import io.github.orryxmod.feature.mouse.MouseFeature
+import io.github.orryxmod.feature.navigation.NavigationFeature
+import io.github.orryxmod.feature.shockwave.ShockwaveFeature
 import kotlin.reflect.KClass
 import kotlin.reflect.full.findAnnotation
 
@@ -13,55 +17,40 @@ import kotlin.reflect.full.findAnnotation
  */
 object FeatureScanner {
 
-    private const val BASE_PACKAGE = "io.github.orryxmod"
+    /**
+     * 已知的功能模块列表（手动注册，避免 Reflections 在 MC 环境下的问题）
+     */
+    private val knownFeatures: List<FeatureBase> = listOf(
+        AimFeature,
+        EffectFeature,
+        MouseFeature,
+        NavigationFeature,
+        ShockwaveFeature
+    )
 
     /**
      * 扫描并注册所有功能模块
      * 按依赖关系拓扑排序后注册
      */
     fun scanAndRegister() {
-        OrryxMod.logger.info("Scanning for features...")
-
-        val reflections = Reflections(BASE_PACKAGE)
-        val featureClasses = reflections.getTypesAnnotatedWith(Feature::class.java)
-            .filter { FeatureBase::class.java.isAssignableFrom(it) }
-            .mapNotNull { it.kotlin as? KClass<out FeatureBase> }
-
-        OrryxMod.logger.info("Found ${featureClasses.size} feature classes")
+        OrryxMod.logger.info("Registering features...")
 
         // 拓扑排序
-        val sorted = topologicalSort(featureClasses)
+        val sorted = topologicalSort(knownFeatures.map { it::class })
 
         // 按顺序注册
         for (featureClass in sorted) {
             try {
-                val instance = getOrCreateInstance(featureClass)
+                val instance = knownFeatures.find { it::class == featureClass }
                 if (instance != null) {
                     FeatureRegistry.register(instance)
                 }
             } catch (ex: Exception) {
-                OrryxMod.logger.error("Failed to instantiate feature ${featureClass.simpleName}", ex)
+                OrryxMod.logger.error("Failed to register feature ${featureClass.simpleName}", ex)
             }
         }
 
-        OrryxMod.logger.info("Feature scanning complete, ${sorted.size} features registered")
-    }
-
-    /**
-     * 获取或创建功能模块实例
-     * 支持 object 单例和普通类
-     */
-    private fun getOrCreateInstance(klass: KClass<out FeatureBase>): FeatureBase? {
-        // 优先使用 object 实例
-        klass.objectInstance?.let { return it }
-
-        // 尝试无参构造函数
-        return try {
-            klass.java.getDeclaredConstructor().newInstance()
-        } catch (ex: Exception) {
-            OrryxMod.logger.error("Cannot instantiate ${klass.simpleName}: no default constructor", ex)
-            null
-        }
+        OrryxMod.logger.info("Feature registration complete, ${sorted.size} features registered")
     }
 
     /**

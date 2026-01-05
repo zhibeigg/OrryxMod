@@ -17,9 +17,7 @@ object CommandManager {
         event.isCanceled = true
 
         val args = message.split(" ")
-        val command = args[0].removePrefix(PREFIX)
-
-        when (command) {
+        when (val command = args[0].removePrefix(PREFIX)) {
             "features" -> {
                 val features = FeatureRegistry.getAll()
                 OrryxMod.logger.info("Registered features (${features.size}):")
