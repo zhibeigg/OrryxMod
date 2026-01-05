@@ -1,0 +1,136 @@
+package io.github.orryxmod.core.network
+
+import java.util.UUID
+
+/**
+ * 协议密封类 - 所有网络包的基类
+ * 使用密封类确保类型安全和 when 穷举
+ */
+sealed class OrryxPacket {
+    abstract val packetId: Int
+
+    // ========== 瞄准系统 ==========
+
+    data class AimRequest(
+        val skill: String,
+        val module: String,
+        val scale: Double,
+        val maxDistance: Double
+    ) : OrryxPacket() {
+        override val packetId = 1
+    }
+
+    data class AimConfirm(
+        val confirmed: Boolean
+    ) : OrryxPacket() {
+        override val packetId = 2
+    }
+
+    data class AimResponse(
+        val skill: String,
+        val x: Double,
+        val y: Double,
+        val z: Double,
+        val yaw: Float,
+        val pitch: Float
+    ) : OrryxPacket() {
+        override val packetId = 4
+    }
+
+    // ========== 实体效果 ==========
+
+    data class GhostEffect(
+        val uuid: UUID,
+        val timeout: Long,
+        val density: Int,
+        val gap: Int
+    ) : OrryxPacket() {
+        override val packetId = 3
+    }
+
+    data class FlickerEffect(
+        val uuid: UUID,
+        val timeout: Long,
+        val alpha: Float
+    ) : OrryxPacket() {
+        override val packetId = 5
+    }
+
+    data class EntityShowAdd(
+        val uuid: UUID,
+        val group: String,
+        val x: Double,
+        val y: Double,
+        val z: Double,
+        val timeout: Long,
+        val rotateX: Float,
+        val rotateY: Float,
+        val rotateZ: Float,
+        val scale: Float
+    ) : OrryxPacket() {
+        override val packetId = 8
+    }
+
+    data class EntityShowRemove(
+        val uuid: UUID,
+        val group: String
+    ) : OrryxPacket() {
+        override val packetId = 9
+    }
+
+    // ========== 鼠标控制 ==========
+
+    data class MouseControl(
+        val show: Boolean
+    ) : OrryxPacket() {
+        override val packetId = 7
+    }
+
+    // ========== 导航系统 ==========
+
+    data class NavigationStart(
+        val x: Int,
+        val y: Int,
+        val z: Int,
+        val range: Int
+    ) : OrryxPacket() {
+        override val packetId = 10
+    }
+
+    object NavigationStop : OrryxPacket() {
+        override val packetId = 11
+    }
+
+    // ========== 冲击波系统 ==========
+
+    data class SquareShockwave(
+        val x: Double,
+        val y: Double,
+        val z: Double,
+        val length: Double,
+        val width: Double,
+        val yaw: Double
+    ) : OrryxPacket() {
+        override val packetId = 12
+    }
+
+    data class CircleShockwave(
+        val x: Double,
+        val y: Double,
+        val z: Double,
+        val radius: Double
+    ) : OrryxPacket() {
+        override val packetId = 13
+    }
+
+    data class SectorShockwave(
+        val x: Double,
+        val y: Double,
+        val z: Double,
+        val radius: Double,
+        val angle: Double,
+        val yaw: Double
+    ) : OrryxPacket() {
+        override val packetId = 14
+    }
+}
