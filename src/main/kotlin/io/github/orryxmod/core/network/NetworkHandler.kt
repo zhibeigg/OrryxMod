@@ -15,7 +15,7 @@ object NetworkHandler {
     fun onPacketReceived(event: FMLNetworkEvent.ClientCustomPacketEvent) {
         try {
             val fmlPacket = event.packet
-            if (fmlPacket.channel() != "${OrryxMod.MOD_ID}:main") return
+            if (fmlPacket.channel() != "orryxmod:main") return
 
             val buffer = fmlPacket.payload()
             val bytes = ByteArray(buffer.readableBytes())

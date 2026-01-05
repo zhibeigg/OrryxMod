@@ -2,7 +2,6 @@ package io.github.orryxmod.core.registry
 
 import io.github.orryxmod.OrryxMod
 import io.github.orryxmod.core.api.DependsOn
-import io.github.orryxmod.core.api.Feature
 import io.github.orryxmod.core.api.FeatureBase
 import io.github.orryxmod.feature.aim.AimFeature
 import io.github.orryxmod.feature.effect.EffectFeature

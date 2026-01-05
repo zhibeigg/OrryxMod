@@ -69,6 +69,7 @@ class OrryxMod {
     @Mod.EventHandler
     fun preInit(e: FMLPreInitializationEvent) {
         network = NetworkRegistry.INSTANCE.newEventDrivenChannel("orryxmod:main")
+        network.register(NetworkHandler)
 
         // 注册TileEntity
         GameRegistry.registerTileEntity(
