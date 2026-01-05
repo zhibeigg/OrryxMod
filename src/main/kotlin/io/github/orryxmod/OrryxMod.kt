@@ -2,7 +2,6 @@ package io.github.orryxmod
 
 import io.github.orryxmod.core.CommandManager
 import io.github.orryxmod.core.FileManager
-import io.github.orryxmod.core.PacketHandler
 import io.github.orryxmod.core.handler.ClientTickHandler
 import io.github.orryxmod.core.handler.DisconnectHandler
 import io.github.orryxmod.core.handler.WorldRenderHandler
@@ -70,7 +69,6 @@ class OrryxMod {
     @Mod.EventHandler
     fun preInit(e: FMLPreInitializationEvent) {
         network = NetworkRegistry.INSTANCE.newEventDrivenChannel("orryxmod:main")
-        network.register(PacketHandler)
 
         // 注册TileEntity
         GameRegistry.registerTileEntity(
