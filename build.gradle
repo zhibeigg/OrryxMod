@@ -155,14 +155,13 @@ shadowJar {
             'META-INF/versions/**',
             'META-INF/**.RSA',
             'META-INF/com.android.tools/**',
-            'META-INF/*.kotlin_module',
-            'kotlin/**/*.kotlin_metadata',
-            'kotlin/**/*.kotlin_builtins',
             'META-INF/*.version'
 
     minimize {
         exclude dependency('cabaletta:baritone-api:.*')
         exclude dependency('org.spongepowered:mixin:.*')
+        exclude dependency('org.jetbrains.kotlin:.*')
+        exclude dependency('org.jetbrains.kotlinx:.*')
     }
 
     configurations = [project.configurations.jarLibs, project.configurations.onlyJarLibs]
