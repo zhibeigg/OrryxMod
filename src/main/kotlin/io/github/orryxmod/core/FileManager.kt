@@ -10,8 +10,6 @@ import net.minecraft.client.renderer.texture.TextureUtil
 import java.awt.image.BufferedImage
 import java.io.File
 import java.io.IOException
-import kotlin.collections.set
-import kotlin.io.nameWithoutExtension
 
 object FileManager {
 
@@ -26,7 +24,8 @@ object FileManager {
             try {
                 pictures[it.nameWithoutExtension] = loadTexture(it)
                 logger.info("picture ${it.name} loaded")
-            } catch (_: Exception) {
+            } catch (e: Exception) {
+                logger.warn("Failed to load texture: ${it.name}", e)
             }
         }
     }
@@ -54,7 +53,9 @@ object FileManager {
         if (file.exists() && !replace) {
             return file
         }
-        newFile(file).writeBytes(javaClass.classLoader.getResourceAsStream(source)?.readBytes() ?: error("resource not found: $source"))
+        val bytes = javaClass.classLoader.getResourceAsStream(source)?.use { it.readBytes() }
+            ?: error("resource not found: $source")
+        newFile(file).writeBytes(bytes)
         return file
     }
 }

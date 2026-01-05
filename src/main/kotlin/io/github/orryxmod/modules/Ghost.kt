@@ -3,7 +3,6 @@ package io.github.orryxmod.modules
 import io.github.orryxmod.api.Module
 import io.github.orryxmod.core.EntityTrackerRegistry
 import io.github.orryxmod.core.FileManager
-import io.github.orryxmod.modules.Flicker.applyFlickerEffect
 import io.github.orryxmod.util.MC
 import net.minecraft.client.renderer.GlStateManager
 import net.minecraft.client.renderer.OpenGlHelper

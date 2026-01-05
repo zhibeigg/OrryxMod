@@ -391,7 +391,7 @@ object Shockwave: Module("Shockwave", "地面冲击波") {
         bounce: Double,
         lifetime: Int,
     ) {
-        val fractureBlockState: FractureBlockState = OrryxMod.FractureBlock.defaultState as FractureBlockState
+        val fractureBlockState: FractureBlockState = OrryxMod.fractureBlock.defaultState as FractureBlockState
         fractureBlockState.setFractureInfo(pos, state, translation, rotation, bounce, lifetime)
 
         world.setBlockState(pos, fractureBlockState, 2)

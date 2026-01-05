@@ -33,17 +33,14 @@ object Aim : Module("Aim", description = "技能辅助瞄准") {
     internal var enable = false
     internal var module = "default"
 
-    private val lowID: Int?
-        get() = FileManager.pictures["select-${module}"]
+    private val selectTextureId: Int?
+        get() = FileManager.pictures["select-$module"]
 
-    private val highID: Int?
-        get() = FileManager.pictures["arrow-${module}"]
+    private val arrowTextureId: Int?
+        get() = FileManager.pictures["arrow-$module"]
 
-    class Location(val x: Double, val y: Double, val z: Double, val yaw: Float, val pitch: Float) {
-
-        override fun toString(): String {
-            return "$x, $y, $z, yaw: $yaw, pitch: $pitch"
-        }
+    data class Location(val x: Double, val y: Double, val z: Double, val yaw: Float, val pitch: Float) {
+        override fun toString() = "$x, $y, $z, yaw: $yaw, pitch: $pitch"
     }
 
     override fun test() {
@@ -53,202 +50,281 @@ object Aim : Module("Aim", description = "技能辅助瞄准") {
     @SubscribeEvent
     fun clientLogoutEvent(event: FMLNetworkEvent.ClientDisconnectionFromServerEvent) {
         if (!event.isCanceled) {
-            enable = false
+            reset()
         }
     }
 
+    /**
+     * 获取玩家瞄准的位置
+     * 优先使用光线追踪，如果没有命中则使用逐步搜索算法
+     */
     private fun getLocation(tick: Float): Location {
-        val playerEyes = MC.player.getPositionEyes(tick)
-        val playerLook = playerEyes.add(MC.player.lookVec.scale(max)) // 光线投射的距离，可以根据需要调整
-        val rayTraceResult = MC.world.rayTraceBlocks(playerEyes, playerLook, false, true, false)
-        rayTraceResult?.hitVec?.let {
-            return Location(it.x, it.y, it.z, MC.player.pitchYaw.y, MC.player.pitchYaw.x)
+        val player = MC.player ?: return Location(0.0, 0.0, 0.0, 0f, 0f)
+        val world = MC.world ?: return Location(0.0, 0.0, 0.0, 0f, 0f)
+
+        val playerEyes = player.getPositionEyes(tick)
+        val lookVec = player.lookVec
+        val playerLook = playerEyes.add(lookVec.scale(max))
+
+        // 优先使用光线追踪
+        world.rayTraceBlocks(playerEyes, playerLook, false, true, false)?.hitVec?.let {
+            return Location(it.x, it.y, it.z, player.pitchYaw.y, player.pitchYaw.x)
         }
 
-        var vec3d = MC.player.lookVec
-        var var0 = 0.0
-        var newMax = max
-        while(var0 < max) {
-            var0++
-            vec3d = MC.player.lookVec.scale(var0).add(MC.player.posX, MC.player.posY + MC.player.eyeHeight, MC.player.posZ)
-            if (!MC.player.world.isAirBlock(BlockPos(vec3d))) {
-                var var1 = 0.0
-                while (var1 < 1) {
-                    var1 += 0.1
-                    var0 -= 0.1
-                    vec3d = MC.player.lookVec.scale(var0).add(MC.player.posX, MC.player.posY + MC.player.eyeHeight, MC.player.posZ)
-                    if (MC.player.world.isAirBlock(BlockPos(vec3d))) {
-                        vec3d = MC.player.lookVec.scale(var0 + 0.1).add(MC.player.posX, MC.player.posY + MC.player.eyeHeight, MC.player.posZ)
-                        if (!MC.player.world.isAirBlock(BlockPos(vec3d).up())) {
-                            newMax = MC.player.positionVector.subtract(vec3d.x, MC.player.posY, vec3d.z).length()-0.1
-                            var0 = newMax
-                        }
+        // 逐步搜索地面位置
+        return findGroundLocation(player, lookVec)
+    }
+
+    /**
+     * 沿着视线方向逐步搜索地面位置
+     */
+    private fun findGroundLocation(player: net.minecraft.entity.player.EntityPlayer, lookVec: Vec3d): Location {
+        val eyePos = Vec3d(player.posX, player.posY + player.eyeHeight, player.posZ)
+        var targetVec = lookVec
+        var distance = 0.0
+        var effectiveMax = max
+
+        // 向前搜索碰撞点
+        while (distance < max) {
+            distance++
+            targetVec = lookVec.scale(distance).add(eyePos)
+
+            if (!player.world.isAirBlock(BlockPos(targetVec))) {
+                // 找到碰撞，精细化搜索
+                val refinedResult = refineCollisionPoint(player, lookVec, eyePos, distance)
+                if (refinedResult != null) {
+                    return refinedResult
+                }
+                effectiveMax = player.positionVector.subtract(targetVec.x, player.posY, targetVec.z).length() - 0.1
+                distance = effectiveMax
+                break
+            }
+        }
+
+        // 检查是否在有效范围内找到了位置
+        return if (distance < effectiveMax) {
+            val blockPos = BlockPos(targetVec).up()
+            Location(targetVec.x, blockPos.y.toDouble(), targetVec.z, player.pitchYaw.y, player.pitchYaw.x)
+        } else {
+            // 向下搜索地面
+            findGroundBelow(player, lookVec, eyePos, distance)
+        }
+    }
+
+    /**
+     * 精细化搜索碰撞点
+     */
+    private fun refineCollisionPoint(
+        player: net.minecraft.entity.player.EntityPlayer,
+        lookVec: Vec3d,
+        eyePos: Vec3d,
+        initialDistance: Double
+    ): Location? {
+        var distance = initialDistance
+        var refinement = 0.0
+
+        while (refinement < 1.0) {
+            refinement += 0.1
+            distance -= 0.1
+            val testVec = lookVec.scale(distance).add(eyePos)
+
+            if (player.world.isAirBlock(BlockPos(testVec))) {
+                val nextVec = lookVec.scale(distance + 0.1).add(eyePos)
+                if (!player.world.isAirBlock(BlockPos(nextVec).up())) {
+                    return null // 继续主搜索
+                }
+                break
+            }
+        }
+        return null
+    }
+
+    /**
+     * 向下搜索地面位置
+     */
+    private fun findGroundBelow(
+        player: net.minecraft.entity.player.EntityPlayer,
+        lookVec: Vec3d,
+        eyePos: Vec3d,
+        forwardDistance: Double
+    ): Location {
+        var verticalOffset = 0.0
+        var targetVec = lookVec.scale(forwardDistance).add(eyePos)
+        val halfMax = max / 2
+
+        while (verticalOffset > -halfMax) {
+            verticalOffset--
+            targetVec = lookVec.scale(forwardDistance).add(
+                player.posX,
+                player.posY + player.eyeHeight + verticalOffset,
+                player.posZ
+            )
+
+            if (!player.world.isAirBlock(BlockPos(targetVec))) {
+                // 找到地面，精细化向上搜索
+                var refinement = 0.0
+                while (refinement < 1.0) {
+                    refinement += 0.1
+                    verticalOffset += 0.1
+                    targetVec = lookVec.scale(forwardDistance).add(
+                        player.posX,
+                        player.posY + player.eyeHeight + verticalOffset,
+                        player.posZ
+                    )
+                    if (player.world.isAirBlock(BlockPos(targetVec))) {
+                        targetVec = lookVec.scale(forwardDistance).add(
+                            player.posX,
+                            player.posY + player.eyeHeight + verticalOffset - 0.1,
+                            player.posZ
+                        )
                         break
                     }
                 }
                 break
             }
         }
-        return if (var0 < newMax) {
-            val block = BlockPos(vec3d).up()
-            Location(vec3d.x, block.y.toDouble(), vec3d.z, MC.player.pitchYaw.y, MC.player.pitchYaw.x)
-        } else {
-            var var1 = 0.0
-            while (var1 > -max/2) {
-                var1 --
-                vec3d = MC.player.lookVec.scale(var0).add(MC.player.posX, MC.player.posY+MC.player.eyeHeight+var1, MC.player.posZ)
-                if (!MC.player.world.isAirBlock(BlockPos(vec3d))) {
-                    var var2 = 0.0
-                    while (var2 < 1) {
-                        var2 += 0.1
-                        var1 += 0.1
-                        vec3d = MC.player.lookVec.scale(var0).add(MC.player.posX, MC.player.posY+MC.player.eyeHeight+var1, MC.player.posZ)
-                        if (MC.player.world.isAirBlock(BlockPos(vec3d))) {
-                            vec3d = MC.player.lookVec.scale(var0).add(MC.player.posX, MC.player.posY+MC.player.eyeHeight+var1-0.1, MC.player.posZ)
-                            break
-                        }
-                    }
-                    break
-                }
-            }
-            val block = BlockPos(vec3d).up()
-            Location(vec3d.x, block.y.toDouble(), vec3d.z, MC.player.pitchYaw.y, MC.player.pitchYaw.x)
-        }
+
+        val blockPos = BlockPos(targetVec).up()
+        return Location(targetVec.x, blockPos.y.toDouble(), targetVec.z, player.pitchYaw.y, player.pitchYaw.x)
     }
 
     internal fun confirm() {
-        if (skill != null) {
-            val location = getLocation(MC.renderPartialTicks)
-            sendDataPacket(PacketHandler.PacketType.AimResponse) {
-                writeUTF(skill!!)
-                writeDouble(location.x)
-                writeDouble(location.y)
-                writeDouble(location.z)
-                writeFloat(location.yaw)
-                writeFloat(location.pitch)
-            }
-            enable = false
-            module = "default"
-            max = 10.0
-            scale = 2.0
-            skill = null
+        val currentSkill = skill ?: return
+
+        val location = getLocation(MC.renderPartialTicks)
+        sendDataPacket(PacketHandler.PacketType.AimResponse) {
+            writeUTF(currentSkill)
+            writeDouble(location.x)
+            writeDouble(location.y)
+            writeDouble(location.z)
+            writeFloat(location.yaw)
+            writeFloat(location.pitch)
         }
+        reset()
     }
 
     internal fun cancel() {
         if (skill != null) {
-            enable = false
-            module = "default"
-            max = 10.0
-            scale = 2.0
-            skill = null
+            reset()
         }
     }
 
-    private var offset = 0.0
-    private var upOrDown = false
+    private fun reset() {
+        enable = false
+        module = "default"
+        max = 10.0
+        scale = 2.0
+        skill = null
+    }
+
+    // 动画状态
+    private var animationOffset = 0.0
+    private var animationDirection = true
 
     @SubscribeEvent
     fun onRenderWorldLast(event: RenderWorldLastEvent) {
-        if (enable) {
-            lowID ?: return
-            highID ?: return
+        if (!enable) return
 
-            val loc = getLocation(event.partialTicks)
-            val vec3d = Vec3d(loc.x, loc.y, loc.z)
-            val newVec = vec3d.subtract(MC.player.positionVector.add(0.0, MC.player.eyeHeight.toDouble(), 0.0))
+        val selectId = selectTextureId ?: return
+        val arrowId = arrowTextureId ?: return
+        val player = MC.player ?: return
 
-            GlStateManager.pushMatrix()
-            GlStateManager.enableBlend()
-            GlStateManager.blendFunc(GlStateManager.SourceFactor.SRC_ALPHA, GlStateManager.DestFactor.ONE_MINUS_SRC_ALPHA)
-            FileManager.bindTexture(lowID!!)
-            //旋转平移
-            GlStateManager.translate(newVec.x, newVec.y, newVec.z)
-            GlStateManager.rotate(-MC.player.rotationYaw, 0.0f, 1.0f, 0.0f)
-            // 绑定纹理并绘制底
-            drawTexturedModalRect(0.0, 0.0, 0.0, scale, scale)
-            FileManager.bindTexture(lowID!!)
-            //旋转平移
-            GlStateManager.rotate(180f, 1.0f, 0.0f, 0.0f)
-            // 绑定纹理并绘制反向底
-            drawTexturedModalRect(0.0, -3.4, 0.0, scale, scale)
-            if (upOrDown) {
-                if (offset < 500) {
-                    offset++
-                } else {
-                    upOrDown = false
-                    offset--
-                }
-            } else {
-                if (offset > 0) {
-                    offset--
-                } else {
-                    upOrDown = true
-                    offset--
-                }
+        val loc = getLocation(event.partialTicks)
+        val targetVec = Vec3d(loc.x, loc.y, loc.z)
+        val relativeVec = targetVec.subtract(player.positionVector.add(0.0, player.eyeHeight.toDouble(), 0.0))
+
+        GlStateManager.pushMatrix()
+        GlStateManager.enableBlend()
+        GlStateManager.blendFunc(GlStateManager.SourceFactor.SRC_ALPHA, GlStateManager.DestFactor.ONE_MINUS_SRC_ALPHA)
+
+        // 渲染底部选择圈
+        FileManager.bindTexture(selectId)
+        GlStateManager.translate(relativeVec.x, relativeVec.y, relativeVec.z)
+        GlStateManager.rotate(-player.rotationYaw, 0.0f, 1.0f, 0.0f)
+        drawTexturedRect(0.0, 0.0, 0.0, scale, scale)
+
+        // 渲染反向底部
+        FileManager.bindTexture(selectId)
+        GlStateManager.rotate(180f, 1.0f, 0.0f, 0.0f)
+        drawTexturedRect(0.0, -3.4, 0.0, scale, scale)
+
+        // 更新动画偏移
+        updateAnimation()
+
+        // 渲染浮动箭头
+        FileManager.bindTexture(arrowId)
+        GlStateManager.rotate(-180f, 1.0f, 0.0f, 0.0f)
+        drawFloatingArrow(0.0, animationOffset / 2000.0, 0.0, scale / 4, scale / 4)
+
+        GlStateManager.disableBlend()
+        GlStateManager.popMatrix()
+    }
+
+    private fun updateAnimation() {
+        if (animationDirection) {
+            if (animationOffset < 500) animationOffset++ else {
+                animationDirection = false
+                animationOffset--
             }
-            FileManager.bindTexture(highID!!)
-            GlStateManager.rotate(-180f, 1.0f, 0.0f, 0.0f)
-            // 绑定纹理并绘制箭头
-            drawFloatTexture(0.0, offset/2000.0, 0.0, scale/4, scale/4)
-
-            GlStateManager.disableBlend()
-            GlStateManager.popMatrix()
+        } else {
+            if (animationOffset > 0) animationOffset-- else {
+                animationDirection = true
+                animationOffset--
+            }
         }
     }
 
-    // 这是一个帮助方法，用于绘制纹理矩形
-    private fun drawTexturedModalRect(x: Double, y: Double, z: Double, width: Double, height: Double) {
-        val tessellator: Tessellator = Tessellator.getInstance()
-        val bufferBuilder: BufferBuilder = tessellator.buffer
-        bufferBuilder.begin(GL11.GL_QUADS, DefaultVertexFormats.POSITION_TEX)
-        bufferBuilder.pos(x - width/2, y+1.7, z + height/2).tex(0.0, 1.0).endVertex()
-        bufferBuilder.pos(x + width/2, y+1.7, z + height/2).tex(1.0, 1.0).endVertex()
-        bufferBuilder.pos(x + width/2, y+1.7, z - height/2).tex(1.0, 0.0).endVertex()
-        bufferBuilder.pos(x - width/2, y+1.7, z - height/2).tex(0.0, 0.0).endVertex()
+    private fun drawTexturedRect(x: Double, y: Double, z: Double, width: Double, height: Double) {
+        val tessellator = Tessellator.getInstance()
+        val buffer = tessellator.buffer
+        val halfWidth = width / 2
+        val halfHeight = height / 2
+        val yOffset = y + 1.7
+
+        buffer.begin(GL11.GL_QUADS, DefaultVertexFormats.POSITION_TEX)
+        buffer.pos(x - halfWidth, yOffset, z + halfHeight).tex(0.0, 1.0).endVertex()
+        buffer.pos(x + halfWidth, yOffset, z + halfHeight).tex(1.0, 1.0).endVertex()
+        buffer.pos(x + halfWidth, yOffset, z - halfHeight).tex(1.0, 0.0).endVertex()
+        buffer.pos(x - halfWidth, yOffset, z - halfHeight).tex(0.0, 0.0).endVertex()
         tessellator.draw()
     }
 
-    private fun drawFloatTexture(x: Double, y: Double, z: Double, width: Double, height: Double) {
-        val tessellator: Tessellator = Tessellator.getInstance()
-        val bufferBuilder: BufferBuilder = tessellator.buffer
-        bufferBuilder.begin(GL11.GL_QUADS, DefaultVertexFormats.POSITION_TEX)
-        bufferBuilder.pos(x - width/2, y+3.5+height, z).tex(0.0, 0.0).endVertex()
-        bufferBuilder.pos(x + width/2, y+3.5+height, z).tex(1.0, 0.0).endVertex()
-        bufferBuilder.pos(x + width/2, y+3.5, z).tex(1.0, 1.0).endVertex()
-        bufferBuilder.pos(x - width/2, y+3.5, z).tex(0.0, 1.0).endVertex()
+    private fun drawFloatingArrow(x: Double, y: Double, z: Double, width: Double, height: Double) {
+        val tessellator = Tessellator.getInstance()
+        val buffer = tessellator.buffer
+        val halfWidth = width / 2
+        val yBase = y + 3.5
+
+        buffer.begin(GL11.GL_QUADS, DefaultVertexFormats.POSITION_TEX)
+        buffer.pos(x - halfWidth, yBase + height, z).tex(0.0, 0.0).endVertex()
+        buffer.pos(x + halfWidth, yBase + height, z).tex(1.0, 0.0).endVertex()
+        buffer.pos(x + halfWidth, yBase, z).tex(1.0, 1.0).endVertex()
+        buffer.pos(x - halfWidth, yBase, z).tex(0.0, 1.0).endVertex()
         tessellator.draw()
     }
 
-    class AimPacket(
+    data class AimPacket(
         val skill: String,
         val picture: String = "default",
         val enable: Boolean,
         val scale: Double,
         val max: Double,
-    ) {
-        override fun toString(): String {
-            return "AimPacket(skill=$skill, picture=$picture, enable=$enable, max=$max, scale=$scale)"
-        }
-    }
+    )
 
     fun renderBlock(event: RenderWorldLastEvent) {
-        val player = MC.player
-
-        // 获取玩家脚下方块
-        val groundPos = BlockPos(player.posX, player.posY - 0.2, player.posZ)
+        val player = MC.player ?: return
         val world = player.world
+
+        val groundPos = BlockPos(player.posX, player.posY - 0.2, player.posZ)
         val groundState = world.getBlockState(groundPos)
 
-        // 跳过空气方块
         if (groundState.block.isAir(groundState, world, groundPos)) return
 
-        // 计算头顶位置（Y偏移2.5个单位）
-        val x = player.lastTickPosX + (player.posX - player.lastTickPosX) * event.partialTicks
-        val y = player.lastTickPosY + (player.posY - player.lastTickPosY) * event.partialTicks + 2.5
-        val z = player.lastTickPosZ + (player.posZ - player.lastTickPosZ) * event.partialTicks
+        val partialTicks = event.partialTicks
+        val x = player.lastTickPosX + (player.posX - player.lastTickPosX) * partialTicks
+        val y = player.lastTickPosY + (player.posY - player.lastTickPosY) * partialTicks + 2.5
+        val z = player.lastTickPosZ + (player.posZ - player.lastTickPosZ) * partialTicks
 
-        // 渲染方块
         renderFloatingBlock(groundState, x - player.posX, y - player.posY, z - player.posZ, 1f)
     }
 
@@ -259,61 +335,56 @@ object Aim : Module("Aim", description = "技能辅助瞄准") {
         GlStateManager.disableLighting()
 
         GlStateManager.translate(x, y, z)
-        GlStateManager.rotate(((System.currentTimeMillis() / 20) % 360).toFloat(), 0f, 1f, 0f) // Y轴旋转动画
+        GlStateManager.rotate(((System.currentTimeMillis() / 20) % 360).toFloat(), 0f, 1f, 0f)
         GlStateManager.translate(-0.5, -0.5, -0.5)
         GlStateManager.scale(scale, scale, scale)
-        // 设置半透明效果
         GlStateManager.color(1.0f, 1.0f, 1.0f, 0.7f)
 
         val tessellator = Tessellator.getInstance()
         val buffer = tessellator.buffer
+        val blockDispatcher = Minecraft.getMinecraft().blockRendererDispatcher
 
-        // 开始渲染方块
         buffer.begin(7, DefaultVertexFormats.BLOCK)
-        val blockrendererdispatcher = Minecraft.getMinecraft().blockRendererDispatcher
 
-        val modelIn = blockrendererdispatcher.getModelForState(state)
+        val model = blockDispatcher.getModelForState(state)
         val pos = BlockPos(x, y, z)
         val rand = MathHelper.getPositionRandom(pos)
-        val flag = Minecraft.isAmbientOcclusionEnabled() && state.getLightValue(MC.world, pos) == 0 && modelIn.isAmbientOcclusion(state)
+        val useAO = Minecraft.isAmbientOcclusionEnabled() &&
+                state.getLightValue(MC.world, pos) == 0 &&
+                model.isAmbientOcclusion(state)
 
-        blockrendererdispatcher.blockModelRenderer.renderBlock(MC.world,
-            blockrendererdispatcher.getModelForState(state),
-            state,
-            BlockPos.ORIGIN,
-            buffer,
-            false,
-            rand,
-            flag)
+        blockDispatcher.blockModelRenderer.renderBlock(
+            MC.world, model, state, BlockPos.ORIGIN, buffer, false, rand, useAO
+        )
         tessellator.draw()
 
-        // 恢复OpenGL状态
         GlStateManager.enableLighting()
         GlStateManager.disableBlend()
         GlStateManager.popMatrix()
     }
 
-    fun BlockModelRenderer.renderBlock(worldIn: IBlockAccess, modelIn: IBakedModel, stateIn: IBlockState, posIn: BlockPos, buffer: BufferBuilder, checkSides: Boolean, rand: Long, flag: Boolean): Boolean {
+    private fun BlockModelRenderer.renderBlock(
+        world: IBlockAccess,
+        model: IBakedModel,
+        state: IBlockState,
+        pos: BlockPos,
+        buffer: BufferBuilder,
+        checkSides: Boolean,
+        rand: Long,
+        useAmbientOcclusion: Boolean
+    ): Boolean {
         try {
-            return if (flag) {
-                this.renderModelSmooth(
-                    worldIn,
-                    modelIn,
-                    stateIn,
-                    posIn,
-                    buffer,
-                    checkSides,
-                    rand
-                )
+            return if (useAmbientOcclusion) {
+                renderModelSmooth(world, model, state, pos, buffer, checkSides, rand)
             } else {
-                this.renderModelFlat(worldIn, modelIn, stateIn, posIn, buffer, checkSides, rand)
+                renderModelFlat(world, model, state, pos, buffer, checkSides, rand)
             }
         } catch (throwable: Throwable) {
-            val crashreport = CrashReport.makeCrashReport(throwable, "Tesselating block model")
-            val crashreportcategory = crashreport.makeCategory("Block model being tesselated")
-            CrashReportCategory.addBlockInfo(crashreportcategory, posIn, stateIn)
-            crashreportcategory.addCrashSection("Using AO", flag)
-            throw ReportedException(crashreport)
+            val crashReport = CrashReport.makeCrashReport(throwable, "Tesselating block model")
+            val category = crashReport.makeCategory("Block model being tesselated")
+            CrashReportCategory.addBlockInfo(category, pos, state)
+            category.addCrashSection("Using AO", useAmbientOcclusion)
+            throw ReportedException(crashReport)
         }
     }
 }

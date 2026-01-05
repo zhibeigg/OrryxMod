@@ -54,7 +54,7 @@ class FractureBlockTileEntity(val fractureBlockState: FractureBlockState): TileE
             }
             if (lifeTime++ > maxLifeTime) {
                 world.setBlockState(pos, originalBlockState, 2)
-                OrryxMod.FractureBlock.blockNodes.remove(pos)
+                OrryxMod.fractureBlock.blockNodes.remove(pos)
 
                 val c = MC.world.getChunk(pos)
                 c.resetRelightChecks()

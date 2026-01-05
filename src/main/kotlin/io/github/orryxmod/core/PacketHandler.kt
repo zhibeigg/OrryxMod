@@ -1,5 +1,6 @@
 package io.github.orryxmod.core
 
+import com.google.common.io.ByteArrayDataInput
 import com.google.common.io.ByteArrayDataOutput
 import com.google.common.io.ByteStreams
 import io.github.orryxmod.OrryxMod
@@ -38,155 +39,171 @@ object PacketHandler {
         data object SectorShockwave : PacketType(14)
     }
 
+    // 数据包处理器接口
+    private fun interface PacketProcessor {
+        fun process(input: ByteArrayDataInput)
+    }
+
+    // 处理器注册表
+    private val processors: Map<Int, PacketProcessor> = mapOf(
+        PacketType.AimConfirm.header to PacketProcessor { input ->
+            OrryxMod.logger.info("Packet Receive AimConfirm")
+            val bool = input.readBoolean()
+            MC.addScheduledTask {
+                if (bool) Aim.confirm() else Aim.cancel()
+            }
+        },
+
+        PacketType.AimRequest.header to PacketProcessor { input ->
+            OrryxMod.logger.info("Packet Receive AimRequest")
+            val skill = input.readUTF()
+            val picture = input.readUTF()
+            val scale = input.readDouble()
+            val max = input.readDouble()
+            MC.addScheduledTask {
+                Aim.skill = skill
+                Aim.max = max
+                Aim.module = picture
+                Aim.scale = scale
+                Aim.enable = true
+            }
+        },
+
+        PacketType.Ghost.header to PacketProcessor { input ->
+            OrryxMod.logger.info("Packet Receive Ghost")
+            val uuid = parseUUID(input.readUTF()) ?: return@PacketProcessor
+            val timeout = input.readLong().coerceIn(0, 60_000)
+            val density = input.readInt().coerceIn(1, 50)
+            val gap = input.readInt().coerceIn(0, 20)
+            MC.addScheduledTask {
+                Ghost.applyGhostEffect(uuid, timeout, density, gap)
+            }
+        },
+
+        PacketType.Flicker.header to PacketProcessor { input ->
+            OrryxMod.logger.info("Packet Receive Flicker")
+            val uuid = parseUUID(input.readUTF()) ?: return@PacketProcessor
+            val timeout = input.readLong().coerceIn(0, 60_000)
+            val alpha = input.readFloat().coerceIn(0f, 1f)
+            MC.addScheduledTask {
+                Flicker.applyFlickerEffect(uuid, timeout, alpha)
+            }
+        },
+
+        PacketType.MouseRequest.header to PacketProcessor { input ->
+            OrryxMod.logger.info("Packet Receive MouseRequest")
+            val show = input.readBoolean()
+            MC.addScheduledTask {
+                if (show) MouseCursor.show() else MouseCursor.hide()
+            }
+        },
+
+        PacketType.EntityShow.header to PacketProcessor { input ->
+            OrryxMod.logger.info("Packet Receive EntityShow")
+            val uuid = parseUUID(input.readUTF()) ?: return@PacketProcessor
+            val id = input.readUTF()
+            val x = input.readDouble()
+            val y = input.readDouble()
+            val z = input.readDouble()
+            val timeout = input.readLong().coerceIn(0, 300_000)
+            val rotateX = input.readFloat()
+            val rotateY = input.readFloat()
+            val rotateZ = input.readFloat()
+            val scale = input.readFloat().coerceIn(0.01f, 10f)
+            MC.addScheduledTask {
+                EntityShow.addShadow(uuid, id, x, y, z, timeout, rotateX, rotateY, rotateZ, scale)
+            }
+        },
+
+        PacketType.EntityShowRemove.header to PacketProcessor { input ->
+            OrryxMod.logger.info("Packet Receive EntityShowRemove")
+            val uuid = parseUUID(input.readUTF()) ?: return@PacketProcessor
+            val group = input.readUTF()
+            MC.addScheduledTask {
+                EntityShow.removeShadow(uuid, group)
+            }
+        },
+
+        PacketType.PlayerNavigation.header to PacketProcessor { input ->
+            OrryxMod.logger.info("Packet Receive PlayerNavigation")
+            val x = input.readInt()
+            val y = input.readInt()
+            val z = input.readInt()
+            val range = input.readInt().coerceIn(0, 100)
+            MC.addScheduledTask {
+                PlayerNavigation.start(x, y, z, range)
+            }
+        },
+
+        PacketType.PlayerNavigationStop.header to PacketProcessor { input ->
+            OrryxMod.logger.info("Packet Receive PlayerNavigationStop")
+            MC.addScheduledTask {
+                PlayerNavigation.stop()
+            }
+        },
+
+        PacketType.SquareShockwave.header to PacketProcessor { input ->
+            OrryxMod.logger.info("Packet Receive SquareShockwave")
+            val x = input.readDouble()
+            val y = input.readDouble()
+            val z = input.readDouble()
+            val length = input.readDouble().coerceIn(0.5, 100.0)
+            val width = input.readDouble().coerceIn(0.5, 100.0)
+            val yaw = input.readDouble()
+            MC.addScheduledTask {
+                Shockwave.squareSlamFracture(x, y, z, length, width, yaw)
+            }
+        },
+
+        PacketType.CircleShockwave.header to PacketProcessor { input ->
+            OrryxMod.logger.info("Packet Receive CircleShockwave")
+            val x = input.readDouble()
+            val y = input.readDouble()
+            val z = input.readDouble()
+            val r = input.readDouble().coerceIn(0.5, 100.0)
+            MC.addScheduledTask {
+                Shockwave.circleSlamFracture(x, y, z, r)
+            }
+        },
+
+        PacketType.SectorShockwave.header to PacketProcessor { input ->
+            OrryxMod.logger.info("Packet Receive SectorShockwave")
+            val x = input.readDouble()
+            val y = input.readDouble()
+            val z = input.readDouble()
+            val r = input.readDouble().coerceIn(0.5, 100.0)
+            val yaw = input.readDouble()
+            val angle = input.readDouble().coerceIn(0.0, 360.0)
+            MC.addScheduledTask {
+                Shockwave.sectorSlamFracture(x, y, z, r, angle, yaw)
+            }
+        }
+    )
+
+    // 安全解析 UUID
+    private fun parseUUID(str: String): UUID? {
+        return runCatching { UUID.fromString(str) }.getOrNull().also {
+            if (it == null) OrryxMod.logger.warn("Invalid UUID: $str")
+        }
+    }
+
     @SubscribeEvent
     fun onPacket(event: FMLNetworkEvent.ClientCustomPacketEvent) {
         try {
             val packet = event.packet
-            // 安全读取字节数据
+            if (packet.channel() != "orryxmod:main") return
+
             val buffer = packet.payload()
             val bytes = ByteArray(buffer.readableBytes())
             buffer.readBytes(bytes)
             val input = ByteStreams.newDataInput(bytes)
 
-            if (packet.channel() == "orryxmod:main") {
-                val header = input.readInt()
-                when (header) {
-                    PacketType.AimConfirm.header -> {
-                        OrryxMod.logger.info("Packet Receive AimConfirm")
-                        val bool = input.readBoolean()
-                        MC.addScheduledTask {
-                            if (bool) {
-                                Aim.confirm()
-                            } else {
-                                Aim.cancel()
-                            }
-                        }
-                    }
-                    PacketType.AimRequest.header -> {
-                        OrryxMod.logger.info("Packet Receive AimRequest")
-                        val aimPacket = Aim.AimPacket(
-                            input.readUTF(),
-                            input.readUTF(),
-                            true,
-                            input.readDouble(),
-                            input.readDouble()
-                        )
-                        MC.addScheduledTask {
-                            Aim.skill = aimPacket.skill
-                            Aim.max = aimPacket.max
-                            Aim.module = aimPacket.picture
-                            Aim.scale = aimPacket.scale
-                            Aim.enable = aimPacket.enable
-                        }
-                    }
-                    PacketType.Ghost.header -> {
-                        OrryxMod.logger.info("Packet Receive Ghost")
-                        val uuid = UUID.fromString(input.readUTF())
-                        val timeout = input.readLong()
-                        val density = input.readInt()
-                        val gap = input.readInt()
-                        MC.addScheduledTask {
-                            Ghost.applyGhostEffect(uuid, timeout, density, gap)
-                        }
-                    }
-                    PacketType.Flicker.header -> {
-                        OrryxMod.logger.info("Packet Receive Flicker")
-                        val uuid = UUID.fromString(input.readUTF())
-                        val timeout = input.readLong()
-                        val alpha = input.readFloat()
-                        MC.addScheduledTask {
-                            Flicker.applyFlickerEffect(uuid, timeout, alpha)
-                        }
-                    }
-                    PacketType.MouseRequest.header -> {
-                        OrryxMod.logger.info("Packet Receive MouseRequest")
-                        val show = input.readBoolean()
-                        MC.addScheduledTask {
-                            if (show) {
-                                MouseCursor.show()
-                            } else {
-                                MouseCursor.hide()
-                            }
-                        }
-                    }
-                    PacketType.EntityShow.header -> {
-                        OrryxMod.logger.info("Packet Receive EntityShow")
-                        val uuid = UUID.fromString(input.readUTF())
-                        val id = input.readUTF()
-                        val x = input.readDouble()
-                        val y = input.readDouble()
-                        val z = input.readDouble()
-                        val timeout = input.readLong()
-                        val rotateX = input.readFloat()
-                        val rotateY = input.readFloat()
-                        val rotateZ = input.readFloat()
-                        val scale = input.readFloat()
-                        MC.addScheduledTask {
-                            EntityShow.addShadow(uuid, id, x, y, z, timeout, rotateX, rotateY, rotateZ, scale)
-                        }
-                    }
-                    PacketType.EntityShowRemove.header -> {
-                        OrryxMod.logger.info("Packet Receive EntityShowRemove")
-                        val uuid = UUID.fromString(input.readUTF())
-                        val group = input.readUTF()
-                        MC.addScheduledTask {
-                            EntityShow.removeShadow(uuid, group)
-                        }
-                    }
-                    PacketType.PlayerNavigation.header -> {
-                        OrryxMod.logger.info("Packet Receive PlayerNavigation")
-                        val x = input.readInt()
-                        val y = input.readInt()
-                        val z = input.readInt()
-                        val range = input.readInt()
-                        MC.addScheduledTask {
-                            PlayerNavigation.start(x, y, z, range)
-                        }
-                    }
-                    PacketType.PlayerNavigationStop.header -> {
-                        OrryxMod.logger.info("Packet Receive PlayerNavigationStop")
-                        MC.addScheduledTask {
-                            PlayerNavigation.stop()
-                        }
-                    }
-                    PacketType.SquareShockwave.header -> {
-                        OrryxMod.logger.info("Packet Receive SquareShockwave")
-                        val x = input.readDouble()
-                        val y = input.readDouble()
-                        val z = input.readDouble()
-                        val length = input.readDouble()
-                        val width = input.readDouble()
-                        val yaw = input.readDouble()
-                        MC.addScheduledTask {
-                            Shockwave.squareSlamFracture(x, y, z, length, width, yaw)
-                        }
-                    }
-                    PacketType.CircleShockwave.header -> {
-                        OrryxMod.logger.info("Packet Receive CircleShockwave")
-                        val x = input.readDouble()
-                        val y = input.readDouble()
-                        val z = input.readDouble()
-                        val r = input.readDouble()
-                        MC.addScheduledTask {
-                            Shockwave.circleSlamFracture(x, y, z, r)
-                        }
-                    }
-                    PacketType.SectorShockwave.header -> {
-                        OrryxMod.logger.info("Packet Receive SectorShockwave")
-                        val x = input.readDouble()
-                        val y = input.readDouble()
-                        val z = input.readDouble()
-                        val r = input.readDouble()
-                        val yaw = input.readDouble()
-                        val angle = input.readDouble()
-                        MC.addScheduledTask {
-                            Shockwave.sectorSlamFracture(x, y, z, r, angle, yaw)
-                        }
-                    }
-                }
-            }
+            val header = input.readInt()
+            processors[header]?.process(input)
+                ?: OrryxMod.logger.warn("Unknown packet type: $header")
+
         } catch (ex: Exception) {
-            OrryxMod.Companion.logger.error("处理数据包时发生错误", ex)
+            OrryxMod.logger.error("处理数据包时发生错误", ex)
         }
     }
 
@@ -199,14 +216,14 @@ object PacketHandler {
                 writeInt(type.header)
                 block()
             }
-            OrryxMod.Companion.network.sendToServer(
+            OrryxMod.network.sendToServer(
                 FMLProxyPacket(
                     PacketBuffer(Unpooled.wrappedBuffer(output.toByteArray())),
-                    "${OrryxMod.Companion.MOD_ID}:main"
+                    "${OrryxMod.MOD_ID}:main"
                 )
             )
         } catch (ex: Exception) {
-            OrryxMod.Companion.logger.error("发送数据包失败: ${ex.message}")
+            OrryxMod.logger.error("发送数据包失败: ${ex.message}")
         }
     }
 }

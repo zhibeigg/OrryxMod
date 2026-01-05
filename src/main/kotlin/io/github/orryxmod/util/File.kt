@@ -2,7 +2,6 @@ package io.github.orryxmod.util
 
 import io.github.orryxmod.core.FileManager.releaseResourceFile
 import java.io.File
-import kotlin.collections.forEach
 
 internal fun files(path: String, vararg defs: String, callback: (File) -> Unit) {
     val file = File("resourcepacks", path)
@@ -34,14 +33,11 @@ fun File.notfound(): Boolean {
 }
 
 internal fun getFiles(file: File): List<File> {
-    val listOf = mutableListOf<File>()
-    when (file.isDirectory) {
-        true -> listOf += file.listFiles()!!.flatMap { getFiles(it) }
-        false -> {
-            if (file.extension == "png") {
-                listOf += file
-            }
-        }
+    if (!file.exists()) return emptyList()
+
+    return when {
+        file.isDirectory -> file.listFiles()?.flatMap { getFiles(it) } ?: emptyList()
+        file.extension.equals("png", ignoreCase = true) -> listOf(file)
+        else -> emptyList()
     }
-    return listOf
 }
