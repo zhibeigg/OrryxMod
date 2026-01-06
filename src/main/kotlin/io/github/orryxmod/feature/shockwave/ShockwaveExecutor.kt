@@ -7,6 +7,7 @@ import net.minecraft.block.Block
 import net.minecraft.block.state.IBlockState
 import net.minecraft.util.EnumParticleTypes
 import net.minecraft.util.math.BlockPos
+import net.minecraft.world.EnumSkyBlock
 import net.minecraft.world.World
 import org.joml.Quaternionf
 import org.joml.Vector3d
@@ -26,9 +27,7 @@ object ShockwaveExecutor {
      * 执行冲击波 - 使用新的 DSL 配置（保留兼容性）
      */
     fun execute(world: World, config: ShockwaveConfig): Boolean {
-        val shape = config.shape
-
-        return when (shape) {
+        return when (val shape = config.shape) {
             is CircleShape -> circleSlamFracture(world, shape.center, shape.radius)
             is SquareShape -> squareSlamFracture(world, shape.center, shape.length, shape.width, shape.yaw)
             is SectorShape -> sectorSlamFracture(world, shape.center, shape.radius, shape.angle, shape.yaw)
@@ -366,11 +365,17 @@ object ShockwaveExecutor {
         val fractureBlockState = OrryxMod.fractureBlock.defaultState as FractureBlockState
         fractureBlockState.setFractureInfo(pos, state, translation, rotation, bounce, lifetime)
 
-        world.setBlockState(pos, fractureBlockState, 2)
+        world.setBlockState(pos, fractureBlockState, 3)
 
-        val chunk = MC.world?.getChunk(pos)
-        chunk?.resetRelightChecks()
-        chunk?.isLightPopulated = true
+        // 正确触发光照更新
+        world.checkLightFor(EnumSkyBlock.BLOCK, pos)
+        world.checkLightFor(EnumSkyBlock.SKY, pos)
+
+        // 通知周围方块更新渲染
+        world.markBlockRangeForRenderUpdate(
+            pos.add(-1, -1, -1),
+            pos.add(1, 1, 1)
+        )
     }
 
     /**

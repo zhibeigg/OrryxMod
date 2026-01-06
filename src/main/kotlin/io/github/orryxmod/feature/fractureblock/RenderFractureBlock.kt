@@ -3,10 +3,13 @@ package io.github.orryxmod.feature.fractureblock
 import io.github.orryxmod.util.MC
 import net.minecraft.client.Minecraft
 import net.minecraft.client.renderer.GlStateManager
+import net.minecraft.client.renderer.OpenGlHelper
 import net.minecraft.client.renderer.Tessellator
 import net.minecraft.client.renderer.texture.TextureMap
 import net.minecraft.client.renderer.tileentity.TileEntitySpecialRenderer
 import net.minecraft.client.renderer.vertex.DefaultVertexFormats
+import net.minecraft.util.EnumFacing
+import net.minecraft.util.math.BlockPos
 import org.joml.Math.clamp
 import org.joml.Quaternionf
 import org.joml.Vector3f
@@ -54,22 +57,27 @@ class RenderFractureBlock: TileEntitySpecialRenderer<FractureBlockTileEntity>() 
         val moveGraph = sqrt(bounceMaxHeight / extender)
         val bouncingAnimation = max(-extender * (blockEntity.lifeTime + partialTicks - moveGraph).pow(2.0) + bounceMaxHeight, 0.0)
 
+        // 计算方块实际渲染位置的光照
+        val actualY = (blockEntity.pos.y + translate.y + bouncingAnimation).toInt().coerceIn(0, 255)
+        val lightPos = BlockPos(blockEntity.pos.x, actualY, blockEntity.pos.z)
+
+        // 获取混合光照值（天空光 + 方块光）
+        val combinedLight = world.getCombinedLight(lightPos, 0)
+
         // 开始渲染方块
         val blockrendererdispatcher = Minecraft.getMinecraft().blockRendererDispatcher
 
         val tessellator = Tessellator.getInstance()
         val buffer = tessellator.buffer
 
-        buffer.setTranslation(-blockEntity.pos.x.toDouble(), -blockEntity.pos.y.toDouble(), -blockEntity.pos.z.toDouble())
-
-		MC.renderEngine.bindTexture(TextureMap.LOCATION_BLOCKS_TEXTURE)
-        buffer.begin(GL11.GL_QUADS, DefaultVertexFormats.BLOCK)
+        MC.renderEngine.bindTexture(TextureMap.LOCATION_BLOCKS_TEXTURE)
 
         GlStateManager.pushMatrix()
 
-		GlStateManager.enableCull()
-		GlStateManager.enableColorMaterial()
-		GL11.glColorMaterial(GL11.GL_FRONT, GL11.GL_AMBIENT_AND_DIFFUSE)
+        // 禁用 OpenGL 光照，使用光照贴图
+        GlStateManager.disableLighting()
+        // 禁用背面剔除，确保旋转后所有面可见
+        GlStateManager.disableCull()
 
         GlStateManager.color(1.0F, 1.0F, 1.0F, alpha)
 
@@ -79,19 +87,46 @@ class RenderFractureBlock: TileEntitySpecialRenderer<FractureBlockTileEntity>() 
         GlStateManager.translate(-0.5, -0.5, -0.5)
 
         val state = blockEntity.originalBlockState
+        val model = blockrendererdispatcher.getModelForState(state)
 
-        blockrendererdispatcher.blockModelRenderer.renderModelSmooth(
-            world,
-            blockrendererdispatcher.getModelForState(state),
-            state,
-            blockEntity.pos,
-            buffer,
-            false,
-            blockEntity.seed
-        )
+        // 自定义渲染：为所有面使用统一光照
+        buffer.begin(GL11.GL_QUADS, DefaultVertexFormats.BLOCK)
+
+        // 渲染所有方向的面
+        for (facing in EnumFacing.VALUES) {
+            val quads = model.getQuads(state, facing, blockEntity.seed)
+            for (quad in quads) {
+                renderQuadWithLight(buffer, quad.vertexData, combinedLight)
+            }
+        }
+
+        // 渲染无方向的面 (null facing)
+        val generalQuads = model.getQuads(state, null, blockEntity.seed)
+        for (quad in generalQuads) {
+            renderQuadWithLight(buffer, quad.vertexData, combinedLight)
+        }
+
         tessellator.draw()
 
-        buffer.setTranslation(0.0, 0.0, 0.0)
+        GlStateManager.enableCull()
+        GlStateManager.enableLighting()
         GlStateManager.popMatrix()
+    }
+
+    /**
+     * 渲染 quad 并设置统一光照值
+     * BLOCK 格式每顶点: position(3f) + color(4b) + uv(2f) + lightmap(2s) = 7 ints
+     */
+    private fun renderQuadWithLight(buffer: net.minecraft.client.renderer.BufferBuilder, vertexData: IntArray, light: Int) {
+        val intsPerVertex = 7  // DefaultVertexFormats.BLOCK = 28 bytes = 7 ints
+        val lightmapOffset = 6  // lightmap 在每个顶点的第 7 个 int (index 6)
+
+        // 复制顶点数据并修改光照值
+        val modifiedData = vertexData.copyOf()
+        for (v in 0 until 4) {
+            modifiedData[v * intsPerVertex + lightmapOffset] = light
+        }
+
+        buffer.addVertexData(modifiedData)
     }
 }
