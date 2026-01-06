@@ -11,7 +11,6 @@ import net.minecraft.util.ITickable
 import net.minecraft.util.math.AxisAlignedBB
 import net.minecraft.util.math.BlockPos
 import net.minecraft.util.math.MathHelper
-import net.minecraft.world.EnumSkyBlock
 import net.minecraft.world.World
 import org.joml.Quaternionf
 import org.joml.Vector3f
@@ -54,18 +53,9 @@ class FractureBlockTileEntity(val fractureBlockState: FractureBlockState): TileE
                 MC.effectRenderer.addEffect(blockParticle)
             }
             if (lifeTime++ > maxLifeTime) {
+                // 使用 flag 3 恢复原方块 (会自动触发光照和渲染更新)
                 world.setBlockState(pos, originalBlockState, 3)
                 OrryxMod.fractureBlock.blockNodes.remove(pos)
-
-                // 正确触发光照重算
-                world.checkLightFor(EnumSkyBlock.BLOCK, pos)
-                world.checkLightFor(EnumSkyBlock.SKY, pos)
-
-                // 通知周围方块更新渲染
-                world.markBlockRangeForRenderUpdate(
-                    pos.add(-1, -1, -1),
-                    pos.add(1, 1, 1)
-                )
             }
         }
     }

@@ -263,9 +263,18 @@ object ShockwaveExecutor {
                     continue
                 }
 
-                // 计算旋转轴
-                val rotAxis = IMPACT_DIRECTION.cross(centerToBlock, Vector3d()).normalize()
-                val axis = Vector3f(rotAxis.x.toFloat(), rotAxis.y.toFloat(), rotAxis.z.toFloat())
+                // 计算旋转轴 (当 distance 接近 0 时使用默认轴)
+                val axis: Vector3f = if (distance < 0.01) {
+                    // 中心方块：使用随机轴避免除零
+                    Vector3f(
+                        world.rand.nextFloat() - 0.5f,
+                        0f,
+                        world.rand.nextFloat() - 0.5f
+                    ).normalize()
+                } else {
+                    val rotAxis = IMPACT_DIRECTION.cross(centerToBlock, Vector3d()).normalize()
+                    Vector3f(rotAxis.x.toFloat(), rotAxis.y.toFloat(), rotAxis.z.toFloat())
+                }
 
                 // 计算位移和旋转
                 val translator = Vector3f(

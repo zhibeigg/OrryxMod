@@ -3,7 +3,6 @@ package io.github.orryxmod.feature.fractureblock
 import io.github.orryxmod.util.MC
 import net.minecraft.client.Minecraft
 import net.minecraft.client.renderer.GlStateManager
-import net.minecraft.client.renderer.OpenGlHelper
 import net.minecraft.client.renderer.Tessellator
 import net.minecraft.client.renderer.texture.TextureMap
 import net.minecraft.client.renderer.tileentity.TileEntitySpecialRenderer
@@ -20,6 +19,11 @@ import kotlin.math.pow
 import kotlin.math.sqrt
 
 class RenderFractureBlock: TileEntitySpecialRenderer<FractureBlockTileEntity>() {
+
+    companion object {
+        // 最大光照值 (天空光 15 + 方块光 15)
+        private const val FULL_BRIGHT = (15 shl 20) or (15 shl 4)
+    }
 
     override fun render(
         blockEntity: FractureBlockTileEntity,
@@ -57,12 +61,16 @@ class RenderFractureBlock: TileEntitySpecialRenderer<FractureBlockTileEntity>() 
         val moveGraph = sqrt(bounceMaxHeight / extender)
         val bouncingAnimation = max(-extender * (blockEntity.lifeTime + partialTicks - moveGraph).pow(2.0) + bounceMaxHeight, 0.0)
 
-        // 计算方块实际渲染位置的光照
-        val actualY = (blockEntity.pos.y + translate.y + bouncingAnimation).toInt().coerceIn(0, 255)
-        val lightPos = BlockPos(blockEntity.pos.x, actualY, blockEntity.pos.z)
-
-        // 获取混合光照值（天空光 + 方块光）
-        val combinedLight = world.getCombinedLight(lightPos, 0)
+        // 计算光照值
+        val combinedLight: Int = if (lerpAmount > 0.5f) {
+            // 动画结束阶段：使用全亮光照，避免恢复时闪黑
+            FULL_BRIGHT
+        } else {
+            // 正常阶段：计算方块实际渲染位置的光照
+            val actualY = (blockEntity.pos.y + translate.y + bouncingAnimation).toInt().coerceIn(0, 255)
+            val lightPos = BlockPos(blockEntity.pos.x, actualY, blockEntity.pos.z)
+            world.getCombinedLight(lightPos, 0)
+        }
 
         // 开始渲染方块
         val blockrendererdispatcher = Minecraft.getMinecraft().blockRendererDispatcher
