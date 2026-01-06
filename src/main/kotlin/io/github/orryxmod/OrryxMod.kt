@@ -4,6 +4,7 @@ import io.github.orryxmod.core.CommandManager
 import io.github.orryxmod.core.FileManager
 import io.github.orryxmod.core.handler.ClientTickHandler
 import io.github.orryxmod.core.handler.DisconnectHandler
+import io.github.orryxmod.core.handler.KeyBindingHandler
 import io.github.orryxmod.core.handler.WorldRenderHandler
 import io.github.orryxmod.core.network.NetworkHandler
 import io.github.orryxmod.core.registry.FeatureRegistry
@@ -54,6 +55,10 @@ class OrryxMod {
         MinecraftForge.EVENT_BUS.register(DisconnectHandler)
         MinecraftForge.EVENT_BUS.register(WorldRenderHandler)
         MinecraftForge.EVENT_BUS.register(ClientTickHandler)
+        MinecraftForge.EVENT_BUS.register(KeyBindingHandler)
+
+        // 注册按键绑定
+        KeyBindingHandler.register()
 
         // 扫描并注册所有 @Feature 模块
         logger.info("Scanning for feature modules...")

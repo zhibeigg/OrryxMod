@@ -7,6 +7,7 @@ import io.github.orryxmod.feature.aim.AimModule
 import io.github.orryxmod.feature.effect.EffectFeature
 import io.github.orryxmod.feature.effect.FlickerConfig
 import io.github.orryxmod.feature.effect.GhostConfig
+import io.github.orryxmod.feature.mouse.MouseFeature
 import io.github.orryxmod.feature.navigation.NavigationFeature
 import io.github.orryxmod.feature.shockwave.ShockwaveFeature
 import io.github.orryxmod.util.MC
@@ -44,6 +45,9 @@ object CommandManager {
         if (!message.startsWith(PREFIX)) return
 
         event.isCanceled = true
+
+        // 手动添加到聊天历史记录，以便可以使用上下键浏览
+        MC.ingameGUI?.chatGUI?.addToSentMessages(message)
 
         val args = message.split(" ")
         when (val command = args[0].removePrefix(PREFIX)) {
@@ -184,6 +188,35 @@ object CommandManager {
                 sendSuccess("Navigation stopped")
             }
 
+            // ========== 鼠标控制测试命令 ==========
+            "mouse" -> {
+                val action = args.getOrNull(1)?.lowercase() ?: "toggle"
+                when (action) {
+                    "show", "on", "1" -> {
+                        MouseFeature.setCursorVisible(true)
+                        sendSuccess("Mouse cursor shown (interactive)")
+                        sendInfo("Press ESC to hide")
+                    }
+                    "hide", "off", "0" -> {
+                        MouseFeature.setCursorVisible(false)
+                        sendSuccess("Mouse cursor hidden")
+                    }
+                    "toggle", "t" -> {
+                        MouseFeature.toggleCursor()
+                        val state = if (MouseFeature.isVisible) "shown" else "hidden"
+                        sendSuccess("Mouse cursor $state")
+                    }
+                    "simple" -> {
+                        // 仅显示鼠标，不启用交互
+                        MouseFeature.setCursorVisible(true, interactive = false)
+                        sendSuccess("Mouse cursor shown (non-interactive)")
+                    }
+                    else -> {
+                        sendError("Usage: .mouse [show|hide|toggle|simple]")
+                    }
+                }
+            }
+
             // ========== 帮助 ==========
             "help" -> {
                 sendMessage("${TextFormatting.YELLOW}===== Commands =====")
@@ -198,6 +231,8 @@ object CommandManager {
                 sendInfo("  .aim [point|dir|area] / .cancelaim")
                 sendInfo("${TextFormatting.WHITE}--- Navigation ---")
                 sendInfo("  .nav [x] [y] [z] / .stopnav")
+                sendInfo("${TextFormatting.WHITE}--- Mouse ---")
+                sendInfo("  .mouse [show|hide|toggle|simple]")
             }
 
             else -> {
