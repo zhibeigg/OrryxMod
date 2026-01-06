@@ -1,4 +1,4 @@
-package io.github.orryxmod.modules.fractureblock
+package io.github.orryxmod.feature.fractureblock
 
 import net.minecraft.block.material.MapColor
 import net.minecraft.block.material.Material

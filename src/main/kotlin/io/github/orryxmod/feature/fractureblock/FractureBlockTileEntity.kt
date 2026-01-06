@@ -1,4 +1,4 @@
-package io.github.orryxmod.modules.fractureblock
+package io.github.orryxmod.feature.fractureblock
 
 import io.github.orryxmod.OrryxMod
 import io.github.orryxmod.util.MC

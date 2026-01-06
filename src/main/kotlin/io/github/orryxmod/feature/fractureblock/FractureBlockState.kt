@@ -1,9 +1,7 @@
-package io.github.orryxmod.modules.fractureblock
+package io.github.orryxmod.feature.fractureblock
 
 import com.google.common.collect.ImmutableMap
 import io.github.orryxmod.OrryxMod
-import it.unimi.dsi.fastutil.ints.Int2ObjectMap
-import it.unimi.dsi.fastutil.ints.Int2ObjectOpenHashMap
 import net.minecraft.block.material.MapColor
 import net.minecraft.block.properties.IProperty
 import net.minecraft.block.state.BlockStateContainer

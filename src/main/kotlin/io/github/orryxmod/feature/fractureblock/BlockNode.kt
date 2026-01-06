@@ -1,4 +1,4 @@
-package io.github.orryxmod.modules.fractureblock
+package io.github.orryxmod.feature.fractureblock
 
 import net.minecraft.block.Block
 import net.minecraft.block.state.IBlockState

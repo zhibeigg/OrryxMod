@@ -8,9 +8,9 @@ import io.github.orryxmod.core.handler.WorldRenderHandler
 import io.github.orryxmod.core.network.NetworkHandler
 import io.github.orryxmod.core.registry.FeatureRegistry
 import io.github.orryxmod.core.registry.FeatureScanner
-import io.github.orryxmod.modules.fractureblock.FractureBlock
-import io.github.orryxmod.modules.fractureblock.FractureBlockTileEntity
-import io.github.orryxmod.modules.fractureblock.RenderFractureBlock
+import io.github.orryxmod.feature.fractureblock.FractureBlock
+import io.github.orryxmod.feature.fractureblock.FractureBlockTileEntity
+import io.github.orryxmod.feature.fractureblock.RenderFractureBlock
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob

@@ -8,8 +8,8 @@ import io.github.orryxmod.core.api.Subscribe
 import io.github.orryxmod.core.event.Events
 import io.github.orryxmod.core.network.OrryxPacket
 import io.github.orryxmod.core.network.PacketDispatcher
+import io.github.orryxmod.core.render.EffectManager
 import io.github.orryxmod.util.MC
-import net.minecraft.client.settings.KeyBinding
 import org.lwjgl.input.Keyboard
 import org.lwjgl.input.Mouse
 
@@ -19,6 +19,14 @@ import org.lwjgl.input.Mouse
  */
 @Feature("aim", description = "技能辅助瞄准")
 object AimFeature : FeatureBase() {
+
+    override fun enable() {
+        super.enable()
+        // 注册渲染器
+        if (!EffectManager.exists(AimRenderer.id)) {
+            EffectManager.add(AimRenderer)
+        }
+    }
 
     // ========== 网络包处理 ==========
 
