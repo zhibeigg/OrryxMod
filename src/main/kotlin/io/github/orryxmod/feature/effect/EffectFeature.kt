@@ -61,8 +61,15 @@ object EffectFeature : FeatureBase() {
         // 清理过期的 Ghost 效果
         ghostEffects.entries.removeIf { !it.value.isActive }
 
-        // 清理过期的 Flicker 效果
-        flickerEffects.removeIf { !it.isActive }
+        // 清理过期的 Flicker 效果（释放 Display List 资源）
+        flickerEffects.removeIf { effect ->
+            if (!effect.isActive) {
+                effect.dispose()
+                true
+            } else {
+                false
+            }
+        }
 
         // 更新 EntityShow 效果
         entityShowEffects.values.forEach { it.update() }
@@ -77,13 +84,6 @@ object EffectFeature : FeatureBase() {
                 effect.renderGhost(event)
             }
         }
-
-        // 渲染 Flicker 效果
-        flickerEffects.forEach { effect ->
-            if (effect.isActive) {
-                effect.renderFlicker(event)
-            }
-        }
     }
 
     @SubscribeEvent
@@ -92,6 +92,13 @@ object EffectFeature : FeatureBase() {
         entityShowEffects.values.forEach { effect ->
             if (effect.isActive) {
                 effect.renderShadows(event)
+            }
+        }
+
+        // 渲染 Flicker 效果（在 RenderWorldLastEvent 中渲染以绕过 Mo' Bends）
+        flickerEffects.forEach { effect ->
+            if (effect.isActive) {
+                effect.renderFlicker(event)
             }
         }
     }
@@ -127,7 +134,9 @@ object EffectFeature : FeatureBase() {
             position = Vector3d(packet.x, packet.y, packet.z),
             rotation = EntityRotation(packet.rotateX, packet.rotateY, packet.rotateZ),
             scale = packet.scale,
-            timeout = packet.timeout
+            timeout = packet.timeout,
+            alpha = packet.alpha,
+            fadeOut = packet.fadeOut
         )
     }
 
@@ -152,12 +161,19 @@ object EffectFeature : FeatureBase() {
      * 应用 Flicker 效果
      */
     fun applyFlicker(uuid: UUID, timeout: Long, config: FlickerConfig = FlickerConfig()) {
-        // 移除过期的效果
-        flickerEffects.removeIf { !it.isActive }
+        // 移除过期的效果（释放 Display List 资源）
+        flickerEffects.removeIf { effect ->
+            if (!effect.isActive) {
+                effect.dispose()
+                true
+            } else {
+                false
+            }
+        }
 
-        // 限制效果数量
+        // 限制效果数量（释放最旧的 Display List）
         if (flickerEffects.size >= MAX_FLICKERS) {
-            flickerEffects.removeFirst()
+            flickerEffects.removeFirst().dispose()
         }
 
         // 创建并初始化效果
@@ -175,13 +191,15 @@ object EffectFeature : FeatureBase() {
         position: Vector3d,
         rotation: EntityRotation = EntityRotation(),
         scale: Float = 1.0f,
-        timeout: Long = 60_000
+        timeout: Long = 60_000,
+        alpha: Float = 1.0f,
+        fadeOut: Boolean = false
     ) {
         val effect = entityShowEffects.getOrPut(uuid) {
             EntityShowEffect(uuid)
         }
 
-        effect.addShadow(group, position, rotation, scale, timeout)
+        effect.addShadow(group, position, rotation, scale, timeout, alpha, fadeOut)
     }
 
     /**
@@ -204,6 +222,8 @@ object EffectFeature : FeatureBase() {
     @OnDisconnect
     fun onDisconnect() {
         ghostEffects.clear()
+        // 释放所有 Flicker 效果的 Display List 资源
+        flickerEffects.forEach { it.dispose() }
         flickerEffects.clear()
         entityShowEffects.clear()
     }
@@ -227,17 +247,19 @@ object EffectFeature : FeatureBase() {
     }
 
     /**
-     * 测试 EntityShow 效果
+     * 测试 EntityShow 效果（带透明度渐隐）
      */
     fun testEntityShow() {
         val player = MC.player ?: return
         addShadow(
-            player.uniqueID,
-            "test",
-            Vector3d(player.posX, player.posY, player.posZ),
-            EntityRotation(0f, 0f, 0f),
-            1f,
-            1000
+            uuid = player.uniqueID,
+            group = "test",
+            position = Vector3d(player.posX, player.posY, player.posZ),
+            rotation = EntityRotation(0f, 0f, 0f),
+            scale = 1f,
+            timeout = 2000,
+            alpha = 0.8f,
+            fadeOut = true
         )
     }
 }

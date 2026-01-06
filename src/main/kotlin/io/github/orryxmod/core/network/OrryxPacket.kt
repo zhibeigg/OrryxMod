@@ -66,7 +66,9 @@ sealed class OrryxPacket {
         val rotateX: Float,
         val rotateY: Float,
         val rotateZ: Float,
-        val scale: Float
+        val scale: Float,
+        val alpha: Float = 1.0f,
+        val fadeOut: Boolean = false
     ) : OrryxPacket() {
         override val packetId = 8
     }

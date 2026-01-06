@@ -153,6 +153,22 @@ object CommandManager {
                 EffectFeature.clearShadows(player.uniqueID)
                 sendSuccess("Shadows cleared")
             }
+            "entityshow" -> {
+                val player = MC.player ?: return
+                val duration = args.getOrNull(1)?.toLongOrNull() ?: 3000L
+                val alpha = args.getOrNull(2)?.toFloatOrNull() ?: 0.8f
+                val fadeOut = args.getOrNull(3)?.lowercase() != "false"
+                val offsetX = args.getOrNull(4)?.toDoubleOrNull() ?: 1.5
+                EffectFeature.addShadow(
+                    uuid = player.uniqueID,
+                    group = "test-entityshow",
+                    position = Vector3d(player.posX + offsetX, player.posY, player.posZ),
+                    timeout = duration,
+                    alpha = alpha,
+                    fadeOut = fadeOut
+                )
+                sendSuccess("EntityShow: alpha=$alpha, fadeOut=$fadeOut, ${duration}ms")
+            }
 
             // ========== 瞄准系统测试命令 ==========
             "aim" -> {
@@ -194,8 +210,8 @@ object CommandManager {
                 when (action) {
                     "show", "on", "1" -> {
                         MouseFeature.setCursorVisible(true)
-                        sendSuccess("Mouse cursor shown (interactive)")
-                        sendInfo("Press ESC to hide")
+                        sendSuccess("Mouse cursor shown")
+                        sendInfo("Press M or use .mouse hide to hide")
                     }
                     "hide", "off", "0" -> {
                         MouseFeature.setCursorVisible(false)
@@ -203,16 +219,11 @@ object CommandManager {
                     }
                     "toggle", "t" -> {
                         MouseFeature.toggleCursor()
-                        val state = if (MouseFeature.isVisible) "shown" else "hidden"
+                        val state = if (MouseFeature.isVisible()) "shown" else "hidden"
                         sendSuccess("Mouse cursor $state")
                     }
-                    "simple" -> {
-                        // 仅显示鼠标，不启用交互
-                        MouseFeature.setCursorVisible(true, interactive = false)
-                        sendSuccess("Mouse cursor shown (non-interactive)")
-                    }
                     else -> {
-                        sendError("Usage: .mouse [show|hide|toggle|simple]")
+                        sendError("Usage: .mouse [show|hide|toggle]")
                     }
                 }
             }
@@ -227,12 +238,13 @@ object CommandManager {
                 sendInfo("${TextFormatting.WHITE}--- Effects ---")
                 sendInfo("  .ghost [ms] [density] / .flicker [ms] [alpha]")
                 sendInfo("  .shadow [ms] [offsetX] / .clearshadow")
+                sendInfo("  .entityshow [ms] [alpha] [fadeOut] [offsetX]")
                 sendInfo("${TextFormatting.WHITE}--- Aim ---")
                 sendInfo("  .aim [point|dir|area] / .cancelaim")
                 sendInfo("${TextFormatting.WHITE}--- Navigation ---")
                 sendInfo("  .nav [x] [y] [z] / .stopnav")
                 sendInfo("${TextFormatting.WHITE}--- Mouse ---")
-                sendInfo("  .mouse [show|hide|toggle|simple]")
+                sendInfo("  .mouse [show|hide|toggle]")
             }
 
             else -> {

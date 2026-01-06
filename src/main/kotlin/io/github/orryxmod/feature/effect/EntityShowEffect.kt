@@ -8,6 +8,7 @@ import net.minecraft.entity.EntityLivingBase
 import net.minecraftforge.client.event.RenderWorldLastEvent
 import org.joml.Vector3d
 import org.joml.Vector3f
+import org.lwjgl.opengl.GL11
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 import kotlin.math.floor
@@ -62,9 +63,20 @@ class EntityShowEffect(
         val rotateY: Float,
         val rotateZ: Float,
         val scale: Float,
+        val alpha: Float = 1.0f,
         val startTime: Long = System.currentTimeMillis()
     ) {
         fun isEnabled() = System.currentTimeMillis() - startTime < timeout
+
+        /**
+         * 获取当前透明度（可选：支持渐隐效果）
+         */
+        fun getCurrentAlpha(fadeOut: Boolean = false): Float {
+            if (!fadeOut) return alpha
+            val remaining = timeout - (System.currentTimeMillis() - startTime)
+            val progress = (remaining.toFloat() / timeout).coerceIn(0f, 1f)
+            return alpha * progress
+        }
     }
 
     // 按组管理的影子
@@ -75,13 +87,22 @@ class EntityShowEffect(
 
     /**
      * 添加影子
+     * @param group 影子组名
+     * @param position 位置
+     * @param rotation 旋转
+     * @param scale 缩放
+     * @param timeout 持续时间(毫秒)
+     * @param alpha 透明度 (0.0-1.0)
+     * @param fadeOut 是否启用渐隐效果
      */
     fun addShadow(
         group: String,
         position: Vector3d,
         rotation: EntityRotation,
         scale: Float,
-        timeout: Long
+        timeout: Long,
+        alpha: Float = 1.0f,
+        fadeOut: Boolean = false
     ) {
         val entity = MC.world?.loadedEntityList
             ?.filterIsInstance<EntityLivingBase>()
@@ -95,15 +116,22 @@ class EntityShowEffect(
             rotateX = rotation.x,
             rotateY = rotation.y,
             rotateZ = rotation.z,
-            scale = scale
+            scale = scale,
+            alpha = alpha
         )
+        // 保存 fadeOut 设置
+        shadowFadeOut[group] = fadeOut
     }
+
+    // 存储每个影子的 fadeOut 设置
+    private val shadowFadeOut = ConcurrentHashMap<String, Boolean>()
 
     /**
      * 移除指定组的影子
      */
     fun removeShadow(group: String) {
         shadows.remove(group)
+        shadowFadeOut.remove(group)
     }
 
     /**
@@ -111,19 +139,24 @@ class EntityShowEffect(
      */
     fun clearAllShadows() {
         shadows.clear()
+        shadowFadeOut.clear()
     }
 
     /**
      * 更新状态，移除过期的影子
      */
     fun update() {
-        shadows.entries.removeIf { !it.value.isEnabled() }
+        val expiredGroups = shadows.entries.filter { !it.value.isEnabled() }.map { it.key }
+        expiredGroups.forEach {
+            shadows.remove(it)
+            shadowFadeOut.remove(it)
+        }
     }
 
     /**
      * 在 RenderWorldLastEvent 中调用此方法渲染影子
      */
-    fun renderShadows(event: RenderWorldLastEvent) {
+    fun renderShadows(@Suppress("UNUSED_PARAMETER") event: RenderWorldLastEvent) {
         val world = MC.world ?: return
         val entity = world.loadedEntityList
             .filterIsInstance<EntityLivingBase>()
@@ -132,15 +165,27 @@ class EntityShowEffect(
 
         // 渲染所有有效的影子
         shadows.values.filter { it.isEnabled() }.forEach { shadow ->
-            doRenderEntityLiving(entity, shadow)
+            val fadeOut = shadowFadeOut[shadow.group] ?: false
+            doRenderEntityLiving(entity, shadow, fadeOut)
         }
     }
 
-    private fun doRenderEntityLiving(ent: EntityLivingBase, shadow: Shadow) {
+    private fun doRenderEntityLiving(ent: EntityLivingBase, shadow: Shadow, fadeOut: Boolean = false) {
         val currentWorld = MC.world?.worldInfo?.worldName ?: return
         if (shadow.track.world != currentWorld) return
 
         val renderManager = MC.renderManager
+        val alpha = shadow.getCurrentAlpha(fadeOut)
+
+        // 如果透明度为0，跳过渲染
+        if (alpha <= 0.001f) return
+
+        // 启用混合模式以支持透明度
+        val needsBlend = alpha < 1.0f
+        if (needsBlend) {
+            GlStateManager.enableBlend()
+            GlStateManager.blendFunc(GL11.GL_SRC_ALPHA, GL11.GL_ONE_MINUS_SRC_ALPHA)
+        }
 
         GlStateManager.enableColorMaterial()
         GlStateManager.pushMatrix()
@@ -188,7 +233,7 @@ class EntityShowEffect(
             renderManager.setPlayerViewY(180.0f)
             renderManager.isRenderShadow = false
             GlStateManager.depthMask(true)
-            GlStateManager.color(1f, 1f, 1f, 1f)
+            GlStateManager.color(1f, 1f, 1f, alpha)
             renderManager.renderEntity(ent, 0.0, 0.0, 0.0, 0.0f, 1.0f, false)
             renderManager.isRenderShadow = true
 
@@ -207,6 +252,11 @@ class EntityShowEffect(
             GlStateManager.setActiveTexture(OpenGlHelper.lightmapTexUnit)
             GlStateManager.disableTexture2D()
             GlStateManager.setActiveTexture(OpenGlHelper.defaultTexUnit)
+
+            // 恢复混合模式
+            if (needsBlend) {
+                GlStateManager.disableBlend()
+            }
         }
     }
 

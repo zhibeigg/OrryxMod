@@ -1,23 +1,17 @@
 package io.github.orryxmod.feature.effect
 
-import io.github.orryxmod.core.EntityTrackerRegistry
 import io.github.orryxmod.core.FileManager
-import io.github.orryxmod.util.MC
-import net.minecraft.client.entity.AbstractClientPlayer
-import net.minecraft.client.model.ModelPlayer
-import net.minecraft.client.renderer.GlStateManager
-import net.minecraft.client.renderer.OpenGlHelper
-import net.minecraft.client.renderer.entity.RenderPlayer
-import net.minecraft.entity.Entity
-import net.minecraft.entity.player.EntityPlayer
-import net.minecraft.util.math.Vec3d
-import net.minecraftforge.client.event.RenderPlayerEvent
-import org.lwjgl.opengl.GL11
+import net.minecraftforge.client.event.RenderWorldLastEvent
 import java.util.UUID
 
 /**
  * Flicker 效果 - 闪影效果
- * 从老模块 modules/Flicker.kt 迁移完整渲染逻辑
+ * 在玩家当前位置渲染一个渐隐的残影
+ *
+ * 使用 Display List 烘焙技术：
+ * - 在第一次渲染时"录制"一次完整的模型渲染到 Display List
+ * - 之后直接回放 Display List，完全绕过 Mo' Bends 等动画模组的 hook
+ * - 实现真正的"动画冻结"效果
  */
 class FlickerEffect(
     val entityUUID: UUID,
@@ -26,8 +20,12 @@ class FlickerEffect(
 ) {
     private val startTime = System.currentTimeMillis()
     private val duration = timeout
-    private var tracker: EntityDummyPlayer? = null
-    private var entityInfo: EntityTrackerRegistry.EntityInfo? = null
+
+    /** 烘焙的玩家几何数据 */
+    private var bakedGeometry: BakedPlayerGeometry? = null
+
+    /** 是否已完成烘焙 */
+    private var baked = false
 
     val isActive: Boolean
         get() = System.currentTimeMillis() - startTime < timeout
@@ -42,137 +40,46 @@ class FlickerEffect(
         }
 
     /**
-     * 初始化追踪器（需要在创建效果时调用）
+     * 初始化（创建烘焙对象，但不执行烘焙）
+     * 烘焙将在第一次渲染时执行（需要 GL 上下文）
      */
     fun initTracker() {
-        val player = MC.world?.getPlayerEntityByUUID(entityUUID) ?: return
-        entityInfo = EntityTrackerRegistry.EntityInfo(player)
-        tracker = EntityDummyPlayer(entityInfo!!)
+        bakedGeometry = BakedPlayerGeometry(entityUUID)
     }
 
     /**
-     * 在 RenderPlayerEvent.Post 中调用此方法渲染闪影
+     * 在 RenderWorldLastEvent 中渲染闪影
+     * 第一次调用时会执行烘焙，之后直接回放 Display List
      */
-    fun renderFlicker(event: RenderPlayerEvent.Post) {
+    fun renderFlicker(@Suppress("UNUSED_PARAMETER") event: RenderWorldLastEvent) {
         val textureId = FileManager.pictures["flicker"] ?: return
-        val originalPlayer = event.entityPlayer ?: return
-        val entInfo = entityInfo ?: return
-        val shadowTracker = tracker ?: return
+        val geometry = bakedGeometry ?: return
 
-        if (entInfo.tracked !== originalPlayer) return
         if (!isActive) return
 
         val alpha = currentAlpha
         if (alpha <= 0) return
 
-        // 保存原始渲染状态
-        GlStateManager.pushMatrix()
-        GlStateManager.pushAttrib()
-        GlStateManager.enableBlend()
-        GlStateManager.blendFunc(GL11.GL_SRC_ALPHA, GL11.GL_ONE_MINUS_SRC_ALPHA)
-        GlStateManager.shadeModel(GL11.GL_SMOOTH)
-
-        try {
-            // 位置插值计算
-            val renderPos = calculateRenderPosition(entInfo, originalPlayer, event.partialRenderTick)
-
-            GlStateManager.pushMatrix()
-            GlStateManager.translate(renderPos.x, renderPos.y, renderPos.z)
-            GlStateManager.rotate(entInfo.renderYawOffset, 0f, -1f, 0f)
-
-            // 模型缩放调整
-            GlStateManager.scale(1.0, -1.0, -1.0)
-            GlStateManager.translate(0.0f, -1.62f, 0.0f)
-
-            GlStateManager.color(1f, 1f, 1f, alpha)
-
-            FileManager.bindTexture(textureId)
-
-            // 动画参数准备
-            val limbSwing = entInfo.limbSwing
-            val limbSwingAmount = entInfo.limbSwingAmount
-            val ageInTicks = entInfo.lastTick.toFloat()
-
-            // 渲染模型
-            shadowTracker.render(
-                originalPlayer,
-                limbSwing,
-                limbSwingAmount,
-                ageInTicks,
-                entInfo.rotationYawHead - entInfo.renderYawOffset,
-                entInfo.rotationPitch,
-                0.0625f
-            )
-
-            GlStateManager.disableCull()
-
-            // 恢复光照贴图
-            var i = 0xF000F0
-            var j = i % 0x10000
-            var k = i / 0x10000
-            OpenGlHelper.setLightmapTextureCoords(OpenGlHelper.lightmapTexUnit, j.toFloat() / 1.0f, k.toFloat() / 1.0f)
-
-            i = originalPlayer.brightnessForRender
-            j = i % 0x10000
-            k = i / 0x10000
-            OpenGlHelper.setLightmapTextureCoords(OpenGlHelper.lightmapTexUnit, j.toFloat() / 1.0f, k.toFloat() / 1.0f)
-
-            GlStateManager.enableCull()
-            GlStateManager.popMatrix()
-        } finally {
-            // 恢复原始渲染状态
-            GlStateManager.shadeModel(GL11.GL_FLAT)
-            GlStateManager.disableBlend()
-            GlStateManager.popAttrib()
-            GlStateManager.popMatrix()
-        }
-    }
-
-    /**
-     * 计算渲染位置（平滑插值）
-     */
-    private fun calculateRenderPosition(
-        entInfo: EntityTrackerRegistry.EntityInfo,
-        originalPlayer: EntityPlayer,
-        partialTicks: Float
-    ): Vec3d {
-        val x = entInfo.posX - interpolate(originalPlayer.posX, originalPlayer.lastTickPosX, partialTicks)
-        val y = entInfo.posY - interpolate(originalPlayer.posY, originalPlayer.lastTickPosY, partialTicks)
-        val z = entInfo.posZ - interpolate(originalPlayer.posZ, originalPlayer.lastTickPosZ, partialTicks)
-        return Vec3d(x, y, z)
-    }
-
-    private fun interpolate(current: Double, prev: Double, partialTicks: Float): Double {
-        return prev + (current - prev) * partialTicks.toDouble()
-    }
-
-    /**
-     * 假人玩家模型 - 复制真实玩家的模型状态
-     */
-    class EntityDummyPlayer(val info: EntityTrackerRegistry.EntityInfo) :
-        ModelPlayer(0.0F, isSlimModel(info.tracked)) {
-
-        init {
-            val biped = (MC.renderManager.getEntityRenderObject<Entity>(info.tracked) as RenderPlayer).mainModel
-            copyModelAngles(biped.bipedHead, bipedHead)
-            copyModelAngles(biped.bipedBody, bipedBody)
-            copyModelAngles(biped.bipedLeftArm, bipedLeftArm)
-            copyModelAngles(biped.bipedRightArm, bipedRightArm)
-            copyModelAngles(biped.bipedLeftLeg, bipedLeftLeg)
-            copyModelAngles(biped.bipedRightLeg, bipedRightLeg)
-            setModelAttributes(biped)
-            leftArmPose = biped.leftArmPose
-            rightArmPose = biped.rightArmPose
-            isSneak = biped.isSneak
-        }
-
-        companion object {
-            /**
-             * 判断是否为Alex模型
-             */
-            fun isSlimModel(player: EntityPlayer): Boolean {
-                return (player is AbstractClientPlayer) && (player.skinType == "slim")
+        // 第一次渲染时执行烘焙
+        if (!baked) {
+            baked = true
+            if (!geometry.bake(textureId)) {
+                // 烘焙失败，清理资源
+                bakedGeometry = null
+                return
             }
         }
+
+        // 渲染烘焙的几何数据
+        geometry.render(alpha)
+    }
+
+    /**
+     * 清理资源
+     * 效果结束时由 EffectFeature 调用
+     */
+    fun dispose() {
+        bakedGeometry?.dispose()
+        bakedGeometry = null
     }
 }

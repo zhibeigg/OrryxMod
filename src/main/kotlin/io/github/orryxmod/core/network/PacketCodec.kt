@@ -49,7 +49,9 @@ object PacketCodec {
                     rotateX = input.readFloat(),
                     rotateY = input.readFloat(),
                     rotateZ = input.readFloat(),
-                    scale = input.readFloat().coerceIn(0.01f, 10f)
+                    scale = input.readFloat().coerceIn(0.01f, 10f),
+                    alpha = input.readFloat().coerceIn(0f, 1f),
+                    fadeOut = input.readBoolean()
                 )
                 9 -> OrryxPacket.EntityShowRemove(
                     uuid = input.readUUID(),

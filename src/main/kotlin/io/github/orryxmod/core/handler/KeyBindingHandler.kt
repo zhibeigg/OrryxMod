@@ -19,7 +19,7 @@ object KeyBindingHandler {
      * 鼠标指针切换按键 (默认: M)
      */
     val keyToggleMouse = KeyBinding(
-        "Toggle Mouse Cursor",
+        "切换鼠标指针显示",
         Keyboard.KEY_M,
         CATEGORY
     )
