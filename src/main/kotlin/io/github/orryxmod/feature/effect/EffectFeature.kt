@@ -122,7 +122,11 @@ object EffectFeature : FeatureBase() {
         applyFlicker(
             packet.uuid,
             packet.timeout,
-            FlickerConfig(alpha = packet.alpha)
+            FlickerConfig(
+                alpha = packet.alpha,
+                duration = packet.duration,
+                scale = packet.scale
+            )
         )
     }
 

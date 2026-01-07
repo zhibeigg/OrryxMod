@@ -34,7 +34,9 @@ object PacketCodec {
                 5 -> OrryxPacket.FlickerEffect(
                     uuid = input.readUUID(),
                     timeout = input.readLong().coerceIn(0, 60_000),
-                    alpha = input.readFloat().coerceIn(0f, 1f)
+                    alpha = input.readFloat().coerceIn(0f, 1f),
+                    duration = input.readLong().coerceIn(-1, 60_000),
+                    scale = input.readFloat().coerceIn(0.1f, 10f)
                 )
                 7 -> OrryxPacket.MouseControl(
                     show = input.readBoolean()

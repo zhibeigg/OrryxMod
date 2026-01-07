@@ -122,8 +122,9 @@ class BakedPlayerGeometry(
      * 渲染烘焙的几何数据
      *
      * @param alpha 透明度
+     * @param scale 缩放
      */
-    fun render(alpha: Float) {
+    fun render(alpha: Float, scale: Float = 1.0f) {
         if (!isBaked) return
         val snapshot = bakedSnapshot ?: return
         val player = MC.world?.getPlayerEntityByUUID(entityUUID) ?: return
@@ -156,7 +157,7 @@ class BakedPlayerGeometry(
         GlStateManager.rotate(180f - snapshot.renderYawOffset, 0f, 1f, 0f)
 
         // 模型缩放调整（标准 Minecraft 玩家渲染变换）
-        GlStateManager.scale(-1.0, -1.0, 1.0)
+        GlStateManager.scale(-scale, -scale, scale)
         GlStateManager.translate(0.0f, -1.3f, 0.0f)
 
         // 设置透明度

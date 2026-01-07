@@ -14,7 +14,9 @@ data class GhostConfig(
  * Flicker 效果配置
  */
 data class FlickerConfig(
-    val alpha: Float = 0.5f
+    val alpha: Float = 0.5f,
+    val duration: Long = -1L,  // 淡化时间，-1 为不淡化（线性衰减）
+    val scale: Float = 1.0f    // 缩放
 )
 
 /**

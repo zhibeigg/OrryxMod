@@ -19,7 +19,7 @@ class FlickerEffect(
     private val config: FlickerConfig
 ) {
     private val startTime = System.currentTimeMillis()
-    private val duration = timeout
+    private val fadeDuration = if (config.duration > 0) config.duration else timeout
 
     /** 烘焙的玩家几何数据 */
     private var bakedGeometry: BakedPlayerGeometry? = null
@@ -31,13 +31,20 @@ class FlickerEffect(
         get() = System.currentTimeMillis() - startTime < timeout
 
     /**
-     * 当前透明度（线性衰减）
+     * 当前透明度
+     * duration > 0: 在 duration 时间内从 alpha 淡化到 0
+     * duration <= 0: 在整个 timeout 期间线性衰减
      */
     val currentAlpha: Float
         get() {
-            val remaining = timeout - (System.currentTimeMillis() - startTime)
-            return (remaining.coerceAtLeast(0L) / duration.toFloat()) * config.alpha
+            val elapsed = System.currentTimeMillis() - startTime
+            if (elapsed >= fadeDuration) return 0f
+            return (1f - elapsed / fadeDuration.toFloat()) * config.alpha
         }
+
+    /** 缩放值 */
+    val scale: Float
+        get() = config.scale
 
     /**
      * 初始化（创建烘焙对象，但不执行烘焙）
@@ -71,7 +78,7 @@ class FlickerEffect(
         }
 
         // 渲染烘焙的几何数据
-        geometry.render(alpha)
+        geometry.render(alpha, scale)
     }
 
     /**

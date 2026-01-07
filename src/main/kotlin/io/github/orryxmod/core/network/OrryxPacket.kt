@@ -51,7 +51,9 @@ sealed class OrryxPacket {
     data class FlickerEffect(
         val uuid: UUID,
         val timeout: Long,
-        val alpha: Float
+        val alpha: Float,
+        val duration: Long,
+        val scale: Float
     ) : OrryxPacket() {
         override val packetId = 5
     }
