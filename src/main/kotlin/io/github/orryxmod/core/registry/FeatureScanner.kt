@@ -4,6 +4,7 @@ import io.github.orryxmod.OrryxMod
 import io.github.orryxmod.core.api.DependsOn
 import io.github.orryxmod.core.api.FeatureBase
 import io.github.orryxmod.feature.aim.AimFeature
+import io.github.orryxmod.feature.bloom.BloomFeature
 import io.github.orryxmod.feature.effect.EffectFeature
 import io.github.orryxmod.feature.mouse.MouseFeature
 import io.github.orryxmod.feature.navigation.NavigationFeature
@@ -21,6 +22,7 @@ object FeatureScanner {
      */
     private val knownFeatures: List<FeatureBase> = listOf(
         AimFeature,
+        BloomFeature,
         EffectFeature,
         MouseFeature,
         NavigationFeature,
