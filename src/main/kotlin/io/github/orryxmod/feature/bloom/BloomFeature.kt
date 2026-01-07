@@ -27,13 +27,11 @@ object BloomFeature : FeatureBase() {
     // 配置
     object Config {
         var enabled = true
-        var entityBloom = true  // 为名字包含 "bloom" 的实体启用泛光
         var strength = 1.5f
         var baseBrightness = 0.1f
         var highBrightnessThreshold = 0.5f
         var lowBrightnessThreshold = 0.5f
         var step = 1.0f
-        var maxBloomDistance = 32.0  // 最大泛光距离
         var maxBloomEntities = 10    // 每帧最大泛光实体数
     }
 
@@ -146,10 +144,7 @@ object BloomFeature : FeatureBase() {
     @Suppress("UNCHECKED_CAST")
     fun onRenderLivingPost(event: RenderLivingEvent.Post<*>) {
         if (!Config.enabled || !ShaderManager.allowedShader()) return
-        // entityBloom 模式下在 onRenderWorldLast 中直接遍历实体
-        if (!Config.entityBloom) {
-            GlowRenderer.renderGlowParts(event)
-        }
+        GlowRenderer.renderGlowParts(event)
     }
 
     @SubscribeEvent(priority = EventPriority.LOW)
@@ -163,31 +158,33 @@ object BloomFeature : FeatureBase() {
         val rm = MC.renderManager
         val partialTicks = event.partialTicks
 
-        // 收集需要泛光的实体
-        val bloomEntities = mutableListOf<Pair<net.minecraft.entity.EntityLivingBase, net.minecraft.client.renderer.entity.RenderLivingBase<net.minecraft.entity.EntityLivingBase>>>()
+        // 收集需要泛光的实体（使用配置管理器）
+        val bloomEntities = mutableListOf<Triple<net.minecraft.entity.EntityLivingBase, net.minecraft.client.renderer.entity.RenderLivingBase<net.minecraft.entity.EntityLivingBase>, BloomConfig>>()
 
-        if (Config.entityBloom) {
-            val maxDistSq = Config.maxBloomDistance * Config.maxBloomDistance
+        if (BloomConfigManager.hasConfigs()) {
             var count = 0
             for (entity in world.loadedEntityList) {
                 if (count >= Config.maxBloomEntities) break
                 if (entity !is net.minecraft.entity.EntityLivingBase) continue
 
-                // 距离剔除
-                val distSq = player.getDistanceSq(entity)
-                if (distSq > maxDistSq) continue
-
-                // 名字检测
+                // 获取实体名称
                 val customName = entity.customNameTag
                 val name = if (!customName.isNullOrEmpty()) customName else entity.name ?: ""
-                if (!name.contains("bloom", ignoreCase = true)) continue
+
+                // 查找匹配的配置
+                val bloomConfig = BloomConfigManager.findConfig(name) ?: continue
+
+                // 距离剔除（使用配置的 radius）
+                val maxDistSq = (bloomConfig.radius * bloomConfig.radius).toDouble()
+                val distSq = player.getDistanceSq(entity)
+                if (distSq > maxDistSq) continue
 
                 // 获取渲染器
                 @Suppress("UNCHECKED_CAST")
                 val renderer = rm.getEntityRenderObject<net.minecraft.entity.EntityLivingBase>(entity) as? net.minecraft.client.renderer.entity.RenderLivingBase<net.minecraft.entity.EntityLivingBase>
                     ?: continue
 
-                bloomEntities.add(entity to renderer)
+                bloomEntities.add(Triple(entity, renderer, bloomConfig))
                 count++
             }
         }
@@ -218,7 +215,7 @@ object BloomFeature : FeatureBase() {
         }
 
         // 渲染泛光实体
-        for ((entity, renderer) in bloomEntities) {
+        for ((entity, renderer, _) in bloomEntities) {
             try {
                 val rx = entity.lastTickPosX + (entity.posX - entity.lastTickPosX) * partialTicks - rm.viewerPosX
                 val ry = entity.lastTickPosY + (entity.posY - entity.lastTickPosY) * partialTicks - rm.viewerPosY
@@ -250,14 +247,15 @@ object BloomFeature : FeatureBase() {
         // 3. 将模糊后的泛光叠加到主画面（使用着色器控制强度）
         val blurredFBO = BloomEffect.getBlurredFBO()
         if (blurredFBO != null) {
-            renderBloomToMain(mainFBO, blurredFBO)
+            val activeConfig = bloomEntities.firstOrNull()?.third
+            renderBloomToMain(mainFBO, blurredFBO, activeConfig)
         }
     }
 
     /**
      * 使用着色器将泛光叠加到主画面
      */
-    private fun renderBloomToMain(mainFBO: Framebuffer, bloomFBO: Framebuffer) {
+    private fun renderBloomToMain(mainFBO: Framebuffer, bloomFBO: Framebuffer, config: BloomConfig? = null) {
         // 确保临时 FBO 存在
         ensureTempFBO(mainFBO)
         val temp = tempFBO ?: return
@@ -276,10 +274,21 @@ object BloomFeature : FeatureBase() {
         ShaderManager.renderFullImageInFBO(temp, ShaderManager.PROGRAM_BLOOM_COMBINE) { program ->
             ShaderManager.setUniform1i(program, "buffer_a", 0)
             ShaderManager.setUniform1i(program, "buffer_b", 1)
-            ShaderManager.setUniform1f(program, "intensive", Config.strength)
+            ShaderManager.setUniform1f(program, "intensive", config?.strength ?: Config.strength)
             ShaderManager.setUniform1f(program, "base", Config.baseBrightness)
             ShaderManager.setUniform1f(program, "threshold_up", Config.highBrightnessThreshold)
             ShaderManager.setUniform1f(program, "threshold_down", Config.lowBrightnessThreshold)
+            // 设置光晕颜色
+            if (config != null) {
+                ShaderManager.setUniform4f(program, "bloom_color",
+                    config.color[0] / 255f,
+                    config.color[1] / 255f,
+                    config.color[2] / 255f,
+                    config.color[3] / 255f
+                )
+            } else {
+                ShaderManager.setUniform4f(program, "bloom_color", 1f, 1f, 1f, 1f)
+            }
         }
 
         // 清理纹理绑定
@@ -409,6 +418,7 @@ object BloomFeature : FeatureBase() {
     fun onDisconnect() {
         glowRenderCallbacks.clear()
         persistentGlow = false
+        BloomConfigManager.clear()
     }
 
     private fun cleanup() {
