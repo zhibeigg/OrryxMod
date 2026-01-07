@@ -135,4 +135,25 @@ sealed class OrryxPacket {
     ) : OrryxPacket() {
         override val packetId = 14
     }
+
+    // ========== Bloom 配置 ==========
+
+    data class BloomConfigSync(
+        val configs: Map<String, io.github.orryxmod.feature.bloom.BloomConfig>
+    ) : OrryxPacket() {
+        override val packetId = 15
+    }
+
+    data class BloomConfigUpdate(
+        val id: String,
+        val config: io.github.orryxmod.feature.bloom.BloomConfig
+    ) : OrryxPacket() {
+        override val packetId = 16
+    }
+
+    data class BloomConfigRemove(
+        val id: String
+    ) : OrryxPacket() {
+        override val packetId = 17
+    }
 }
