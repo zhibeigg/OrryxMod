@@ -3,6 +3,8 @@ package io.github.orryxmod.feature.bloom
 import io.github.orryxmod.core.api.Feature
 import io.github.orryxmod.core.api.FeatureBase
 import io.github.orryxmod.core.api.OnDisconnect
+import io.github.orryxmod.core.network.OrryxPacket
+import io.github.orryxmod.core.network.PacketDispatcher
 import io.github.orryxmod.util.MC
 import net.minecraft.client.renderer.GlStateManager
 import net.minecraft.client.renderer.OpenGlHelper
@@ -58,6 +60,17 @@ object BloomFeature : FeatureBase() {
         // 初始化着色器
         if (OpenGlHelper.shadersSupported) {
             ShaderManager.init()
+        }
+
+        // 注册配置包处理器
+        PacketDispatcher.register<OrryxPacket.BloomConfigSync> { packet ->
+            BloomConfigManager.syncAll(packet.configs)
+        }
+        PacketDispatcher.register<OrryxPacket.BloomConfigUpdate> { packet ->
+            BloomConfigManager.update(packet.id, packet.config)
+        }
+        PacketDispatcher.register<OrryxPacket.BloomConfigRemove> { packet ->
+            BloomConfigManager.remove(packet.id)
         }
     }
 
