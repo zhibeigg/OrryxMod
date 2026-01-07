@@ -86,6 +86,23 @@ object PacketCodec {
                     angle = input.readDouble().coerceIn(0.0, 360.0),
                     yaw = input.readDouble()
                 )
+                15 -> {
+                    val count = input.readInt()
+                    val configs = mutableMapOf<String, io.github.orryxmod.feature.bloom.BloomConfig>()
+                    repeat(count) {
+                        val id = input.readUTF()
+                        val config = readBloomConfig(input)
+                        configs[id] = config
+                    }
+                    OrryxPacket.BloomConfigSync(configs)
+                }
+                16 -> OrryxPacket.BloomConfigUpdate(
+                    id = input.readUTF(),
+                    config = readBloomConfig(input)
+                )
+                17 -> OrryxPacket.BloomConfigRemove(
+                    id = input.readUTF()
+                )
                 else -> {
                     OrryxMod.logger.warn("Unknown packet ID: $id")
                     null
@@ -125,5 +142,23 @@ object PacketCodec {
         return runCatching { UUID.fromString(str) }.getOrElse {
             throw IllegalArgumentException("Invalid UUID format: $str")
         }
+    }
+
+    /**
+     * 从输入流读取 BloomConfig
+     */
+    private fun readBloomConfig(input: ByteArrayDataInput): io.github.orryxmod.feature.bloom.BloomConfig {
+        return io.github.orryxmod.feature.bloom.BloomConfig(
+            name = input.readUTF(),
+            color = intArrayOf(
+                input.readInt().coerceIn(0, 255),
+                input.readInt().coerceIn(0, 255),
+                input.readInt().coerceIn(0, 255),
+                input.readInt().coerceIn(0, 255)
+            ),
+            strength = input.readFloat().coerceIn(0f, 10f),
+            radius = input.readFloat().coerceIn(1f, 128f),
+            priority = input.readInt()
+        )
     }
 }
