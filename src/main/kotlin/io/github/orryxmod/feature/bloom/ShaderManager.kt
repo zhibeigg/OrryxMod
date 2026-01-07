@@ -131,6 +131,10 @@ object ShaderManager {
         GL20.glUniform2f(getUniformLocation(program, name), x, y)
     }
 
+    fun setUniform4f(program: Int, name: String, x: Float, y: Float, z: Float, w: Float) {
+        GL20.glUniform4f(getUniformLocation(program, name), x, y, z, w)
+    }
+
     /**
      * 渲染全屏四边形到 FBO
      */
