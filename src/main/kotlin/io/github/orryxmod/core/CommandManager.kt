@@ -254,13 +254,8 @@ object CommandManager {
                         BloomFeature.Config.strength = value
                         sendSuccess("Bloom strength: $value")
                     }
-                    "entity", "e" -> {
-                        BloomFeature.Config.entityBloom = !BloomFeature.Config.entityBloom
-                        val state = if (BloomFeature.Config.entityBloom) "ON" else "OFF"
-                        sendSuccess("Entity bloom: $state")
-                    }
                     else -> {
-                        sendError("Usage: .bloom [test|on|off|strength|entity]")
+                        sendError("Usage: .bloom [test|on|off|strength]")
                     }
                 }
             }
