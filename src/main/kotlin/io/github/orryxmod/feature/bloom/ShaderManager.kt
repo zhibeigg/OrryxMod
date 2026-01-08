@@ -8,6 +8,7 @@ import org.lwjgl.opengl.GL11
 import org.lwjgl.opengl.GL20
 import java.io.BufferedReader
 import java.io.InputStreamReader
+import java.lang.reflect.Field
 
 /**
  * 着色器管理器
@@ -18,6 +19,11 @@ object ShaderManager {
 
     private val programs = mutableMapOf<String, Int>()
     private val uniformLocations = mutableMapOf<String, MutableMap<String, Int>>()
+
+    // OptiFine 光影检测
+    private var optifineChecked = false
+    private var optifineShaderPackLoadedField: Field? = null
+    private var optifineAvailable = false
 
     // 着色器对象
     var IMAGE_V: Int = 0
@@ -49,10 +55,40 @@ object ShaderManager {
 
     private var initialized = false
 
-    fun allowedShader(): Boolean = OpenGlHelper.shadersSupported
+    /**
+     * 检测 OptiFine 光影是否启用
+     */
+    private fun isOptifineShaderActive(): Boolean {
+        if (!optifineChecked) {
+            optifineChecked = true
+            try {
+                val shadersClass = Class.forName("net.optifine.shaders.Shaders")
+                optifineShaderPackLoadedField = shadersClass.getDeclaredField("shaderPackLoaded")
+                optifineShaderPackLoadedField?.isAccessible = true
+                optifineAvailable = true
+            } catch (e: Exception) {
+                // OptiFine 未安装
+                optifineAvailable = false
+            }
+        }
+
+        if (!optifineAvailable) return false
+
+        return try {
+            optifineShaderPackLoadedField?.getBoolean(null) == true
+        } catch (e: Exception) {
+            false
+        }
+    }
+
+    fun allowedShader(): Boolean {
+        // 如果 OptiFine 光影启用，禁用我们的泛光效果
+        if (isOptifineShaderActive()) return false
+        return OpenGlHelper.shadersSupported
+    }
 
     fun init() {
-        if (initialized || !allowedShader()) return
+        if (initialized || !OpenGlHelper.shadersSupported) return
 
         try {
             // 加载着色器
