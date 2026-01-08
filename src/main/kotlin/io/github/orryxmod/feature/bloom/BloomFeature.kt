@@ -237,6 +237,9 @@ object BloomFeature : FeatureBase() {
         ensureBloomFBO(mainFBO)
         val glowFBO = bloomFBO ?: return
 
+        // 保存所有 OpenGL 状态
+        GL11.glPushAttrib(GL11.GL_ALL_ATTRIB_BITS)
+
         // 按配置分组实体
         val groupedEntities = bloomEntities.groupBy { it.config.name }
 
@@ -261,51 +264,64 @@ object BloomFeature : FeatureBase() {
             GlStateManager.depthMask(false)
             OpenGlHelper.setLightmapTextureCoords(OpenGlHelper.lightmapTexUnit, 240f, 240f)
 
-            // 以“纯色遮罩”方式写入高亮缓冲，避免同一实体存在多层渲染/多 pass 时叠加导致个别实体异常偏亮
+            // 以"纯色遮罩"方式写入高亮缓冲，避免同一实体存在多层渲染/多 pass 时叠加导致个别实体异常偏亮
+            // 但保留纹理采样以正确处理透明像素
             GlStateManager.disableLighting()
             GlStateManager.disableBlend()
-            GlStateManager.setActiveTexture(GL13.GL_TEXTURE0)
-            GlStateManager.disableTexture2D()
-            GlStateManager.bindTexture(0)
             GlStateManager.setActiveTexture(GL13.GL_TEXTURE1)
             GlStateManager.disableTexture2D()
             GlStateManager.bindTexture(0)
             GlStateManager.setActiveTexture(GL13.GL_TEXTURE0)
+            GlStateManager.enableTexture2D()  // 启用纹理以读取 alpha
             GlStateManager.color(1f, 1f, 1f, 1f)
+
+            // 启用多边形偏移，避免与主渲染的 Z-fighting
+            GL11.glEnable(GL11.GL_POLYGON_OFFSET_FILL)
+            GL11.glPolygonOffset(-1f, -1f)
 
             ShaderManager.useProgram(ShaderManager.PROGRAM_MASK)
             ShaderManager.setUniform4f(ShaderManager.PROGRAM_MASK, "u_color", 1f, 1f, 1f, 1f)
+            ShaderManager.setUniform1i(ShaderManager.PROGRAM_MASK, "u_texture", 0)
+            ShaderManager.setUniform1f(ShaderManager.PROGRAM_MASK, "u_alphaThreshold", 0.1f)
 
             for (candidate in group) {
                 try {
                     val entity = candidate.entity
                     val renderer = candidate.renderer
+
                     val rx = entity.lastTickPosX + (entity.posX - entity.lastTickPosX) * partialTicks - rm.viewerPosX
                     val ry = entity.lastTickPosY + (entity.posY - entity.lastTickPosY) * partialTicks - rm.viewerPosY
                     val rz = entity.lastTickPosZ + (entity.posZ - entity.lastTickPosZ) * partialTicks - rm.viewerPosZ
 
+                    // 使用 doRender 渲染完整模型（包括其他 mod 的修改）
                     GlStateManager.color(1f, 1f, 1f, 1f)
                     renderer.doRender(entity, rx, ry, rz, entity.rotationYaw, partialTicks)
 
+                    // doRender 后恢复状态并重新激活着色器
                     glowFBO.bindFramebuffer(false)
                     GlStateManager.depthMask(false)
                     OpenGlHelper.setLightmapTextureCoords(OpenGlHelper.lightmapTexUnit, 240f, 240f)
                     GlStateManager.disableLighting()
                     GlStateManager.disableBlend()
-                    GlStateManager.setActiveTexture(GL13.GL_TEXTURE0)
-                    GlStateManager.disableTexture2D()
-                    GlStateManager.bindTexture(0)
                     GlStateManager.setActiveTexture(GL13.GL_TEXTURE1)
                     GlStateManager.disableTexture2D()
                     GlStateManager.bindTexture(0)
                     GlStateManager.setActiveTexture(GL13.GL_TEXTURE0)
+                    GlStateManager.enableTexture2D()
                     GlStateManager.color(1f, 1f, 1f, 1f)
+
+                    // 重新激活遮罩着色器
+                    ShaderManager.useProgram(ShaderManager.PROGRAM_MASK)
+                    ShaderManager.setUniform4f(ShaderManager.PROGRAM_MASK, "u_color", 1f, 1f, 1f, 1f)
+                    ShaderManager.setUniform1i(ShaderManager.PROGRAM_MASK, "u_texture", 0)
+                    ShaderManager.setUniform1f(ShaderManager.PROGRAM_MASK, "u_alphaThreshold", 0.1f)
                 } catch (e: Exception) {
                     e.printStackTrace()
                 }
             }
 
             ShaderManager.releaseProgram()
+            GL11.glDisable(GL11.GL_POLYGON_OFFSET_FILL)  // 禁用多边形偏移
             GlStateManager.setActiveTexture(GL13.GL_TEXTURE1)
             GlStateManager.disableTexture2D()
             GlStateManager.bindTexture(0)
@@ -383,8 +399,18 @@ object BloomFeature : FeatureBase() {
                 }
                 GlStateManager.depthMask(true)
                 GlStateManager.enableDepth()
+
+                // 清理纹理绑定状态
+                GlStateManager.setActiveTexture(GL13.GL_TEXTURE0)
+                GlStateManager.bindTexture(0)
             }
         }
+
+        // 恢复所有 OpenGL 状态
+        GL11.glPopAttrib()
+
+        // 确保主 FBO 正确绑定（glPopAttrib 不恢复 FBO 绑定）
+        mainFBO.bindFramebuffer(true)
     }
 
     /**
