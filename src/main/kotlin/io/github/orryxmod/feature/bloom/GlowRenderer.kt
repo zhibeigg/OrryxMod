@@ -20,6 +20,20 @@ object GlowRenderer {
      */
     fun renderGlowParts(event: RenderLivingEvent.Post<*>) {
         val entity = event.entity
+
+        // 若该实体已被 BloomConfig 匹配并会在 WorldLast 走“整实体配置泛光”流程，
+        // 这里再渲染 glow 部件会造成同一实体叠加两次泛光，表现为某个实体亮度显著更高。
+        val customName = entity.customNameTag
+        val baseName = if (!customName.isNullOrEmpty()) customName else entity.name ?: ""
+        val displayName = entity.displayName.unformattedText
+        val formattedName = entity.displayName.formattedText
+        if (BloomConfigManager.findConfig(baseName) != null ||
+            BloomConfigManager.findConfig(displayName) != null ||
+            BloomConfigManager.findConfig(formattedName) != null
+        ) {
+            return
+        }
+
         val renderer = event.renderer
         val model = renderer.mainModel ?: return
 

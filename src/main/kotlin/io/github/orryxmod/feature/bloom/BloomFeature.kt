@@ -32,14 +32,12 @@ object BloomFeature : FeatureBase() {
         var highBrightnessThreshold = 0.5f
         var lowBrightnessThreshold = 0.5f
         var step = 1.0f
-        var maxBloomEntities = 10    // 每帧最大泛光实体数
+        var maxBloomEntities = 0     // 每帧最大泛光实体数（<=0 表示不限制）
     }
 
     // 泛光 FBO
     private var bloomFBO: Framebuffer? = null
-
-    // 临时缓冲区（用于避免读写冲突）
-    private var tempFBO: Framebuffer? = null
+    private var bloomFBODepthBuffer: Int = -1
 
     // 待渲染的发光回调 (参数: partialTicks)
     private val glowRenderCallbacks = java.util.concurrent.CopyOnWriteArrayList<(Float) -> Unit>()
@@ -51,6 +49,41 @@ object BloomFeature : FeatureBase() {
     private var bloomMark = false
     private var mainFBOBackup: Framebuffer? = null
 
+    private data class BloomCandidate(
+        val entity: net.minecraft.entity.EntityLivingBase,
+        val renderer: net.minecraft.client.renderer.entity.RenderLivingBase<net.minecraft.entity.EntityLivingBase>,
+        val config: BloomConfig,
+        val distSq: Double
+    )
+
+    private fun selectCandidates(candidates: List<BloomCandidate>, maxTotal: Int): List<BloomCandidate> {
+        if (candidates.isEmpty()) return emptyList()
+        if (maxTotal <= 0) return candidates
+        if (candidates.size <= maxTotal) return candidates
+
+        val byConfig = candidates.groupBy { it.config.name }
+        val queues = byConfig.values
+            .sortedWith(
+                compareByDescending<List<BloomCandidate>> { it.first().config.priority }
+                    .thenBy { it.first().config.name }
+            )
+            .map { group -> group.sortedBy { it.distSq }.toMutableList() }
+
+        val selected = ArrayList<BloomCandidate>(maxTotal)
+        while (selected.size < maxTotal) {
+            var progressed = false
+            for (queue in queues) {
+                if (selected.size >= maxTotal) break
+                val next = queue.removeFirstOrNull() ?: continue
+                selected.add(next)
+                progressed = true
+            }
+            if (!progressed) break
+        }
+
+        return selected
+    }
+
     override fun enable() {
         super.enable()
         MinecraftForge.EVENT_BUS.register(this)
@@ -58,6 +91,9 @@ object BloomFeature : FeatureBase() {
         // 初始化着色器
         if (OpenGlHelper.shadersSupported) {
             ShaderManager.init()
+            io.github.orryxmod.OrryxMod.logger.info("[Bloom] Shader initialized: IMAGE=${ShaderManager.PROGRAM_IMAGE}, BLUR=${ShaderManager.PROGRAM_BLUR}, COMBINE=${ShaderManager.PROGRAM_BLOOM_COMBINE}")
+        } else {
+            io.github.orryxmod.OrryxMod.logger.warn("[Bloom] Shaders not supported!")
         }
 
         // 注册配置包处理器
@@ -117,11 +153,20 @@ object BloomFeature : FeatureBase() {
         val mainFBO = mainFBOBackup ?: return
         val glowFBO = bloomFBO ?: return
 
-        BloomEffect.renderBlur(glowFBO)
+        val resultFBO = BloomEffect.renderBlurAndBlend(glowFBO, mainFBO, null)
+        if (resultFBO != null) {
+            GlStateManager.setActiveTexture(GL13.GL_TEXTURE0)
+            GlStateManager.enableTexture2D()
+            resultFBO.bindFramebufferTexture()
 
-        val blurredFBO = BloomEffect.getBlurredFBO()
-        if (blurredFBO != null) {
-            renderBloomToMain(mainFBO, blurredFBO)
+            GlStateManager.disableBlend()
+            GlStateManager.disableDepth()
+            GlStateManager.depthMask(false)
+            ShaderManager.renderFullImageInFBO(mainFBO, ShaderManager.PROGRAM_IMAGE) { program ->
+                ShaderManager.setUniform1i(program, "colourTexture", 0)
+            }
+            GlStateManager.depthMask(true)
+            GlStateManager.enableDepth()
         }
 
         mainFBOBackup = null
@@ -159,190 +204,187 @@ object BloomFeature : FeatureBase() {
         val partialTicks = event.partialTicks
 
         // 收集需要泛光的实体（使用配置管理器）
-        val bloomEntities = mutableListOf<Triple<net.minecraft.entity.EntityLivingBase, net.minecraft.client.renderer.entity.RenderLivingBase<net.minecraft.entity.EntityLivingBase>, BloomConfig>>()
+        val candidates = mutableListOf<BloomCandidate>()
 
         if (BloomConfigManager.hasConfigs()) {
-            var count = 0
             for (entity in world.loadedEntityList) {
-                if (count >= Config.maxBloomEntities) break
                 if (entity !is net.minecraft.entity.EntityLivingBase) continue
 
-                // 获取实体名称
-                val customName = entity.customNameTag
-                val name = if (!customName.isNullOrEmpty()) customName else entity.name ?: ""
+                val bloomConfig = run {
+                    val customName = entity.customNameTag
+                    val baseName = if (!customName.isNullOrEmpty()) customName else entity.name ?: ""
+                    BloomConfigManager.findConfig(baseName)
+                        ?: BloomConfigManager.findConfig(entity.displayName.unformattedText)
+                        ?: BloomConfigManager.findConfig(entity.displayName.formattedText)
+                } ?: continue
 
-                // 查找匹配的配置
-                val bloomConfig = BloomConfigManager.findConfig(name) ?: continue
-
-                // 距离剔除（使用配置的 radius）
                 val maxDistSq = (bloomConfig.radius * bloomConfig.radius).toDouble()
                 val distSq = player.getDistanceSq(entity)
                 if (distSq > maxDistSq) continue
 
-                // 获取渲染器
                 @Suppress("UNCHECKED_CAST")
                 val renderer = rm.getEntityRenderObject<net.minecraft.entity.EntityLivingBase>(entity) as? net.minecraft.client.renderer.entity.RenderLivingBase<net.minecraft.entity.EntityLivingBase>
                     ?: continue
 
-                bloomEntities.add(Triple(entity, renderer, bloomConfig))
-                count++
+                candidates.add(BloomCandidate(entity, renderer, bloomConfig, distSq))
             }
         }
 
+        val bloomEntities = selectCandidates(candidates, Config.maxBloomEntities)
         val hasGlow = persistentGlow || glowRenderCallbacks.isNotEmpty() || bloomEntities.isNotEmpty()
         if (!hasGlow) return
 
         ensureBloomFBO(mainFBO)
         val glowFBO = bloomFBO ?: return
 
-        // 1. 渲染发光物体到 glowFBO（只清颜色，不清深度，因为深度缓冲是共享的）
-        glowFBO.bindFramebuffer(false)
-        GL11.glClearColor(0f, 0f, 0f, 0f)
-        GL11.glClear(GL11.GL_COLOR_BUFFER_BIT)
-        glowFBO.bindFramebuffer(true)
+        // 按配置分组实体
+        val groupedEntities = bloomEntities.groupBy { it.config.name }
 
-        // 启用深度测试但禁止写入深度缓冲（避免穿透其他模型，但不影响后续渲染）
-        GlStateManager.enableDepth()
-        GlStateManager.depthMask(false)
-        // 设置全亮度光照，避免不同角度光晕强度不同
-        OpenGlHelper.setLightmapTextureCoords(OpenGlHelper.lightmapTexUnit, 240f, 240f)
-        // 启用加法混合，让多个实体的泛光叠加
-        GlStateManager.enableBlend()
-        GlStateManager.blendFunc(GL11.GL_ONE, GL11.GL_ONE)
+        // 重置 PingPong 状态
+        BloomEffect.resetPingPong()
 
-        if (persistentGlow) {
-            renderTestCube()
+        // 第一组使用 mainFBO 作为背景，后续组使用累积结果
+        var isFirstGroup = true
+        var lastResultFBO: Framebuffer? = null
+
+        // 为每个配置组单独渲染
+        for ((_, group) in groupedEntities) {
+            val config = group.first().config
+
+            // 1. 渲染该组实体到 glowFBO
+            glowFBO.bindFramebuffer(false)
+            GL11.glClearColor(0f, 0f, 0f, 0f)
+            GL11.glClear(GL11.GL_COLOR_BUFFER_BIT)
+            glowFBO.bindFramebuffer(true)
+
+            GlStateManager.enableDepth()
+            GlStateManager.depthMask(false)
+            OpenGlHelper.setLightmapTextureCoords(OpenGlHelper.lightmapTexUnit, 240f, 240f)
+
+            // 以“纯色遮罩”方式写入高亮缓冲，避免同一实体存在多层渲染/多 pass 时叠加导致个别实体异常偏亮
+            GlStateManager.disableLighting()
+            GlStateManager.disableBlend()
+            GlStateManager.setActiveTexture(GL13.GL_TEXTURE0)
+            GlStateManager.disableTexture2D()
+            GlStateManager.bindTexture(0)
+            GlStateManager.setActiveTexture(GL13.GL_TEXTURE1)
+            GlStateManager.disableTexture2D()
+            GlStateManager.bindTexture(0)
+            GlStateManager.setActiveTexture(GL13.GL_TEXTURE0)
+            GlStateManager.color(1f, 1f, 1f, 1f)
+
+            ShaderManager.useProgram(ShaderManager.PROGRAM_MASK)
+            ShaderManager.setUniform4f(ShaderManager.PROGRAM_MASK, "u_color", 1f, 1f, 1f, 1f)
+
+            for (candidate in group) {
+                try {
+                    val entity = candidate.entity
+                    val renderer = candidate.renderer
+                    val rx = entity.lastTickPosX + (entity.posX - entity.lastTickPosX) * partialTicks - rm.viewerPosX
+                    val ry = entity.lastTickPosY + (entity.posY - entity.lastTickPosY) * partialTicks - rm.viewerPosY
+                    val rz = entity.lastTickPosZ + (entity.posZ - entity.lastTickPosZ) * partialTicks - rm.viewerPosZ
+
+                    GlStateManager.color(1f, 1f, 1f, 1f)
+                    renderer.doRender(entity, rx, ry, rz, entity.rotationYaw, partialTicks)
+
+                    glowFBO.bindFramebuffer(false)
+                    GlStateManager.depthMask(false)
+                    OpenGlHelper.setLightmapTextureCoords(OpenGlHelper.lightmapTexUnit, 240f, 240f)
+                    GlStateManager.disableLighting()
+                    GlStateManager.disableBlend()
+                    GlStateManager.setActiveTexture(GL13.GL_TEXTURE0)
+                    GlStateManager.disableTexture2D()
+                    GlStateManager.bindTexture(0)
+                    GlStateManager.setActiveTexture(GL13.GL_TEXTURE1)
+                    GlStateManager.disableTexture2D()
+                    GlStateManager.bindTexture(0)
+                    GlStateManager.setActiveTexture(GL13.GL_TEXTURE0)
+                    GlStateManager.color(1f, 1f, 1f, 1f)
+                } catch (e: Exception) {
+                    e.printStackTrace()
+                }
+            }
+
+            ShaderManager.releaseProgram()
+            GlStateManager.setActiveTexture(GL13.GL_TEXTURE1)
+            GlStateManager.disableTexture2D()
+            GlStateManager.bindTexture(0)
+            GlStateManager.setActiveTexture(GL13.GL_TEXTURE0)
+            GlStateManager.enableTexture2D()
+            GlStateManager.bindTexture(0)
+            GlStateManager.color(1f, 1f, 1f, 1f)
+            GlStateManager.enableLighting()
+            GlStateManager.disableBlend()
+            GlStateManager.depthMask(true)
+
+            // 2. 模糊并混合
+            // 第一组使用 mainFBO 作为背景，后续组使用累积模式
+            lastResultFBO = BloomEffect.renderBlurAndBlend(glowFBO, mainFBO, config, !isFirstGroup)
+            isFirstGroup = false
         }
 
-        // 渲染泛光实体
-        for ((entity, renderer, _) in bloomEntities) {
-            try {
-                val rx = entity.lastTickPosX + (entity.posX - entity.lastTickPosX) * partialTicks - rm.viewerPosX
-                val ry = entity.lastTickPosY + (entity.posY - entity.lastTickPosY) * partialTicks - rm.viewerPosY
-                val rz = entity.lastTickPosZ + (entity.posZ - entity.lastTickPosZ) * partialTicks - rm.viewerPosZ
-                renderer.doRender(entity, rx, ry, rz, entity.rotationYaw, partialTicks)
-            } catch (e: Exception) {
-                e.printStackTrace()
+        // 3. 最后一次性复制结果回主 FBO
+        if (lastResultFBO != null) {
+            GlStateManager.setActiveTexture(GL13.GL_TEXTURE0)
+            GlStateManager.enableTexture2D()
+            lastResultFBO.bindFramebufferTexture()
+
+            GlStateManager.disableBlend()
+            GlStateManager.disableDepth()
+            GlStateManager.depthMask(false)
+            ShaderManager.renderFullImageInFBO(mainFBO, ShaderManager.PROGRAM_IMAGE) { program ->
+                ShaderManager.setUniform1i(program, "colourTexture", 0)
+            }
+            GlStateManager.depthMask(true)
+            GlStateManager.enableDepth()
+        }
+
+        // 处理测试立方体和回调（无颜色着色）
+        if (persistentGlow || glowRenderCallbacks.isNotEmpty()) {
+            glowFBO.bindFramebuffer(false)
+            GL11.glClearColor(0f, 0f, 0f, 0f)
+            GL11.glClear(GL11.GL_COLOR_BUFFER_BIT)
+            glowFBO.bindFramebuffer(true)
+
+            GlStateManager.enableDepth()
+            GlStateManager.depthMask(false)
+            OpenGlHelper.setLightmapTextureCoords(OpenGlHelper.lightmapTexUnit, 240f, 240f)
+            GlStateManager.enableBlend()
+            GlStateManager.blendFunc(GL11.GL_ONE, GL11.GL_ONE)
+
+            if (persistentGlow) {
+                renderTestCube()
+            }
+
+            val callbacks = glowRenderCallbacks.toList()
+            glowRenderCallbacks.clear()
+            callbacks.forEach { callback ->
+                try {
+                    callback(partialTicks)
+                } catch (e: Exception) {
+                    e.printStackTrace()
+                }
+            }
+
+            GlStateManager.disableBlend()
+            GlStateManager.depthMask(true)
+
+            val resultFBO = BloomEffect.renderBlurAndBlend(glowFBO, mainFBO, null)
+            if (resultFBO != null) {
+                GlStateManager.setActiveTexture(GL13.GL_TEXTURE0)
+                GlStateManager.enableTexture2D()
+                resultFBO.bindFramebufferTexture()
+
+                GlStateManager.disableBlend()
+                GlStateManager.disableDepth()
+                GlStateManager.depthMask(false)
+                ShaderManager.renderFullImageInFBO(mainFBO, ShaderManager.PROGRAM_IMAGE) { program ->
+                    ShaderManager.setUniform1i(program, "colourTexture", 0)
+                }
+                GlStateManager.depthMask(true)
+                GlStateManager.enableDepth()
             }
         }
-
-        // 处理回调（用于 GlowRenderer 等）
-        val callbacks = glowRenderCallbacks.toList()
-        glowRenderCallbacks.clear()
-        callbacks.forEach { callback ->
-            try {
-                callback(partialTicks)
-            } catch (e: Exception) {
-                e.printStackTrace()
-            }
-        }
-
-        // 恢复状态
-        GlStateManager.disableBlend()
-        GlStateManager.depthMask(true)
-
-        // 2. 对发光物体进行模糊
-        BloomEffect.renderBlur(glowFBO)
-
-        // 3. 将模糊后的泛光叠加到主画面（使用着色器控制强度）
-        val blurredFBO = BloomEffect.getBlurredFBO()
-        if (blurredFBO != null) {
-            val activeConfig = bloomEntities.firstOrNull()?.third
-            renderBloomToMain(mainFBO, blurredFBO, activeConfig)
-        }
-    }
-
-    /**
-     * 使用着色器将泛光叠加到主画面
-     */
-    private fun renderBloomToMain(mainFBO: Framebuffer, bloomFBO: Framebuffer, config: BloomConfig? = null) {
-        // 确保临时 FBO 存在
-        ensureTempFBO(mainFBO)
-        val temp = tempFBO ?: return
-
-        // 绑定主画面纹理到 TEXTURE0
-        GlStateManager.setActiveTexture(GL13.GL_TEXTURE0)
-        GlStateManager.enableTexture2D()
-        mainFBO.bindFramebufferTexture()
-
-        // 绑定泛光纹理到 TEXTURE1
-        GlStateManager.setActiveTexture(GL13.GL_TEXTURE1)
-        GlStateManager.enableTexture2D()
-        bloomFBO.bindFramebufferTexture()
-
-        // 使用混合着色器渲染到临时 FBO（避免读写冲突）
-        ShaderManager.renderFullImageInFBO(temp, ShaderManager.PROGRAM_BLOOM_COMBINE) { program ->
-            ShaderManager.setUniform1i(program, "buffer_a", 0)
-            ShaderManager.setUniform1i(program, "buffer_b", 1)
-            ShaderManager.setUniform1f(program, "intensive", config?.strength ?: Config.strength)
-            ShaderManager.setUniform1f(program, "base", Config.baseBrightness)
-            ShaderManager.setUniform1f(program, "threshold_up", Config.highBrightnessThreshold)
-            ShaderManager.setUniform1f(program, "threshold_down", Config.lowBrightnessThreshold)
-            // 设置光晕颜色
-            if (config != null) {
-                ShaderManager.setUniform4f(program, "bloom_color",
-                    config.color[0] / 255f,
-                    config.color[1] / 255f,
-                    config.color[2] / 255f,
-                    config.color[3] / 255f
-                )
-            } else {
-                ShaderManager.setUniform4f(program, "bloom_color", 1f, 1f, 1f, 1f)
-            }
-        }
-
-        // 清理纹理绑定
-        GlStateManager.setActiveTexture(GL13.GL_TEXTURE1)
-        GlStateManager.bindTexture(0)
-        GlStateManager.setActiveTexture(GL13.GL_TEXTURE0)
-
-        // 将临时 FBO 复制回主 FBO
-        temp.bindFramebufferTexture()
-        ShaderManager.renderFullImageInFBO(mainFBO, ShaderManager.PROGRAM_IMAGE, null)
-
-        GlStateManager.bindTexture(0)
-    }
-
-    private fun ensureTempFBO(mainFBO: Framebuffer) {
-        if (tempFBO == null ||
-            tempFBO!!.framebufferWidth != mainFBO.framebufferWidth ||
-            tempFBO!!.framebufferHeight != mainFBO.framebufferHeight
-        ) {
-            tempFBO?.deleteFramebuffer()
-            tempFBO = Framebuffer(mainFBO.framebufferWidth, mainFBO.framebufferHeight, false).apply {
-                setFramebufferColor(0f, 0f, 0f, 0f)
-                setFramebufferFilter(GL11.GL_LINEAR)
-            }
-        }
-    }
-
-    private fun drawFullscreenQuad(width: Int, height: Int, intensity: Float = 1f) {
-        GlStateManager.matrixMode(GL11.GL_PROJECTION)
-        GlStateManager.pushMatrix()
-        GlStateManager.loadIdentity()
-        GlStateManager.ortho(0.0, width.toDouble(), height.toDouble(), 0.0, -1.0, 1.0)
-
-        GlStateManager.matrixMode(GL11.GL_MODELVIEW)
-        GlStateManager.pushMatrix()
-        GlStateManager.loadIdentity()
-
-        GlStateManager.disableLighting()
-        GL11.glColor4f(intensity, intensity, intensity, 1f)
-
-        GL11.glBegin(GL11.GL_QUADS)
-        GL11.glTexCoord2f(0f, 1f); GL11.glVertex2f(0f, 0f)
-        GL11.glTexCoord2f(0f, 0f); GL11.glVertex2f(0f, height.toFloat())
-        GL11.glTexCoord2f(1f, 0f); GL11.glVertex2f(width.toFloat(), height.toFloat())
-        GL11.glTexCoord2f(1f, 1f); GL11.glVertex2f(width.toFloat(), 0f)
-        GL11.glEnd()
-
-        GL11.glColor4f(1f, 1f, 1f, 1f)
-        GlStateManager.enableLighting()
-
-        GlStateManager.matrixMode(GL11.GL_PROJECTION)
-        GlStateManager.popMatrix()
-        GlStateManager.matrixMode(GL11.GL_MODELVIEW)
-        GlStateManager.popMatrix()
     }
 
     /**
@@ -390,17 +432,25 @@ object BloomFeature : FeatureBase() {
     }
 
     private fun ensureBloomFBO(mainFBO: Framebuffer) {
-        if (bloomFBO == null ||
+        val needsResize = bloomFBO == null ||
             bloomFBO!!.framebufferWidth != mainFBO.framebufferWidth ||
             bloomFBO!!.framebufferHeight != mainFBO.framebufferHeight
-        ) {
+
+        if (needsResize) {
             bloomFBO?.deleteFramebuffer()
             bloomFBO = Framebuffer(mainFBO.framebufferWidth, mainFBO.framebufferHeight, false).apply {
                 setFramebufferColor(0f, 0f, 0f, 0f)
                 setFramebufferFilter(GL11.GL_LINEAR)
             }
+            bloomFBODepthBuffer = -1
+        }
 
-            hookDepthBuffer(bloomFBO!!, mainFBO.depthBuffer)
+        // mainFBO 的 depthBuffer 可能在运行过程中被重建（即使分辨率不变），需要重新挂载，否则 bloomFBO 可能变为不完整并停止渲染。
+        val depthBuffer = mainFBO.depthBuffer
+        val fbo = bloomFBO ?: return
+        if (depthBuffer > 0 && bloomFBODepthBuffer != depthBuffer) {
+            hookDepthBuffer(fbo, depthBuffer)
+            bloomFBODepthBuffer = depthBuffer
         }
     }
 
@@ -412,6 +462,7 @@ object BloomFeature : FeatureBase() {
             OpenGlHelper.GL_RENDERBUFFER,
             depthBuffer
         )
+        OpenGlHelper.glBindFramebuffer(OpenGlHelper.GL_FRAMEBUFFER, 0)
     }
 
     @OnDisconnect
@@ -419,13 +470,13 @@ object BloomFeature : FeatureBase() {
         glowRenderCallbacks.clear()
         persistentGlow = false
         BloomConfigManager.clear()
+        bloomFBODepthBuffer = -1
     }
 
     private fun cleanup() {
         bloomFBO?.deleteFramebuffer()
         bloomFBO = null
-        tempFBO?.deleteFramebuffer()
-        tempFBO = null
+        bloomFBODepthBuffer = -1
         BloomEffect.cleanup()
         ShaderManager.cleanup()
         glowRenderCallbacks.clear()

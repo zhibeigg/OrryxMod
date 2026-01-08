@@ -22,7 +22,12 @@ object NetworkHandler {
             buffer.readBytes(bytes)
 
             val input = ByteStreams.newDataInput(bytes)
-            val packet = PacketCodec.decode(input) ?: return
+            val packet = PacketCodec.decode(input)
+            if (packet == null) {
+                OrryxMod.logger.warn("[Network] Failed to decode packet")
+                return
+            }
+            OrryxMod.logger.info("[Network] Received packet: ${packet::class.simpleName}")
 
             // 在主线程处理
             MC.addScheduledTask {

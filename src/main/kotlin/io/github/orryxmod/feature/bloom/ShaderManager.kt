@@ -28,6 +28,12 @@ object ShaderManager {
         private set
     var BLOOM_COMBINE: Int = 0
         private set
+    var COLOR_TINT: Int = 0
+        private set
+    var MASK_V: Int = 0
+        private set
+    var MASK_F: Int = 0
+        private set
 
     // 程序对象
     var PROGRAM_IMAGE: Int = 0
@@ -35,6 +41,10 @@ object ShaderManager {
     var PROGRAM_BLUR: Int = 0
         private set
     var PROGRAM_BLOOM_COMBINE: Int = 0
+        private set
+    var PROGRAM_COLOR_TINT: Int = 0
+        private set
+    var PROGRAM_MASK: Int = 0
         private set
 
     private var initialized = false
@@ -50,11 +60,16 @@ object ShaderManager {
             IMAGE_F = loadShader(GL20.GL_FRAGMENT_SHADER, "image.frag")
             BLUR = loadShader(GL20.GL_FRAGMENT_SHADER, "blur.frag")
             BLOOM_COMBINE = loadShader(GL20.GL_FRAGMENT_SHADER, "bloom_combine.frag")
+            COLOR_TINT = loadShader(GL20.GL_FRAGMENT_SHADER, "color_tint.frag")
+            MASK_V = loadShader(GL20.GL_VERTEX_SHADER, "mask.vert")
+            MASK_F = loadShader(GL20.GL_FRAGMENT_SHADER, "mask.frag")
 
             // 创建程序
             PROGRAM_IMAGE = createProgram(IMAGE_V, IMAGE_F)
             PROGRAM_BLUR = createProgram(IMAGE_V, BLUR)
             PROGRAM_BLOOM_COMBINE = createProgram(IMAGE_V, BLOOM_COMBINE)
+            PROGRAM_COLOR_TINT = createProgram(IMAGE_V, COLOR_TINT)
+            PROGRAM_MASK = createProgram(MASK_V, MASK_F)
 
             initialized = true
         } catch (e: Exception) {
@@ -131,6 +146,10 @@ object ShaderManager {
         GL20.glUniform2f(getUniformLocation(program, name), x, y)
     }
 
+    fun setUniform3f(program: Int, name: String, x: Float, y: Float, z: Float) {
+        GL20.glUniform3f(getUniformLocation(program, name), x, y, z)
+    }
+
     fun setUniform4f(program: Int, name: String, x: Float, y: Float, z: Float, w: Float) {
         GL20.glUniform4f(getUniformLocation(program, name), x, y, z, w)
     }
@@ -174,11 +193,16 @@ object ShaderManager {
         if (PROGRAM_IMAGE != 0) GL20.glDeleteProgram(PROGRAM_IMAGE)
         if (PROGRAM_BLUR != 0) GL20.glDeleteProgram(PROGRAM_BLUR)
         if (PROGRAM_BLOOM_COMBINE != 0) GL20.glDeleteProgram(PROGRAM_BLOOM_COMBINE)
+        if (PROGRAM_COLOR_TINT != 0) GL20.glDeleteProgram(PROGRAM_COLOR_TINT)
+        if (PROGRAM_MASK != 0) GL20.glDeleteProgram(PROGRAM_MASK)
 
         if (IMAGE_V != 0) GL20.glDeleteShader(IMAGE_V)
         if (IMAGE_F != 0) GL20.glDeleteShader(IMAGE_F)
         if (BLUR != 0) GL20.glDeleteShader(BLUR)
         if (BLOOM_COMBINE != 0) GL20.glDeleteShader(BLOOM_COMBINE)
+        if (COLOR_TINT != 0) GL20.glDeleteShader(COLOR_TINT)
+        if (MASK_V != 0) GL20.glDeleteShader(MASK_V)
+        if (MASK_F != 0) GL20.glDeleteShader(MASK_F)
 
         programs.clear()
         uniformLocations.clear()
