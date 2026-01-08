@@ -202,6 +202,15 @@ object ShaderManager {
 
         fbo.bindFramebuffer(true)
 
+        // 保存并设置矩阵状态，确保全屏四边形正确渲染
+        GL11.glMatrixMode(GL11.GL_PROJECTION)
+        GL11.glPushMatrix()
+        GL11.glLoadIdentity()
+
+        GL11.glMatrixMode(GL11.GL_MODELVIEW)
+        GL11.glPushMatrix()
+        GL11.glLoadIdentity()
+
         useProgram(program)
 
         // 设置分辨率 uniform
@@ -211,14 +220,25 @@ object ShaderManager {
         uniformSetup?.invoke(program)
 
         // 渲染全屏四边形（使用立即模式）
+        // 必须设置纹理坐标，否则着色器的 gl_MultiTexCoord0 会有未定义值
         GL11.glBegin(GL11.GL_QUADS)
+        GL11.glTexCoord2f(0f, 0f)
         GL11.glVertex2f(-1f, -1f)
+        GL11.glTexCoord2f(1f, 0f)
         GL11.glVertex2f(1f, -1f)
+        GL11.glTexCoord2f(1f, 1f)
         GL11.glVertex2f(1f, 1f)
+        GL11.glTexCoord2f(0f, 1f)
         GL11.glVertex2f(-1f, 1f)
         GL11.glEnd()
 
         releaseProgram()
+
+        // 恢复矩阵状态
+        GL11.glMatrixMode(GL11.GL_PROJECTION)
+        GL11.glPopMatrix()
+        GL11.glMatrixMode(GL11.GL_MODELVIEW)
+        GL11.glPopMatrix()
 
         return fbo
     }

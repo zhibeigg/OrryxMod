@@ -5,6 +5,7 @@ import net.minecraft.client.shader.Framebuffer
 import net.minecraftforge.fml.relauncher.Side
 import net.minecraftforge.fml.relauncher.SideOnly
 import org.lwjgl.opengl.GL11
+import org.lwjgl.opengl.GL12
 import org.lwjgl.opengl.GL13
 
 /**
@@ -63,12 +64,27 @@ object BloomEffect {
                 setFramebufferColor(0f, 0f, 0f, 0f)
                 setFramebufferFilter(GL11.GL_LINEAR)
             }
+            // 设置纹理边界处理，避免边缘伪影
+            setTextureClampToEdge(blurH!!)
+            setTextureClampToEdge(blurW!!)
+            setTextureClampToEdge(blurH2!!)
+            setTextureClampToEdge(blurW2!!)
         } else {
             updateFBOSize(blurH!!, w8, h8)
             updateFBOSize(blurW!!, w8, h8)
             updateFBOSize(blurH2!!, w4, h4)
             updateFBOSize(blurW2!!, w4, h4)
         }
+    }
+
+    /**
+     * 设置纹理边界为 CLAMP_TO_EDGE，避免模糊时的边缘伪影
+     */
+    private fun setTextureClampToEdge(fbo: Framebuffer) {
+        GlStateManager.bindTexture(fbo.framebufferTexture)
+        GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_WRAP_S, GL12.GL_CLAMP_TO_EDGE)
+        GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_WRAP_T, GL12.GL_CLAMP_TO_EDGE)
+        GlStateManager.bindTexture(0)
     }
 
     private fun updatePingPongSize(width: Int, height: Int) {
@@ -79,6 +95,9 @@ object BloomEffect {
             bufferB = Framebuffer(width, height, false).apply {
                 setFramebufferColor(0f, 0f, 0f, 0f)
             }
+            // 设置纹理边界处理
+            setTextureClampToEdge(bufferA!!)
+            setTextureClampToEdge(bufferB!!)
         } else {
             updateFBOSize(bufferA!!, width, height)
             updateFBOSize(bufferB!!, width, height)
@@ -88,6 +107,8 @@ object BloomEffect {
     private fun updateFBOSize(fbo: Framebuffer, width: Int, height: Int): Boolean {
         if (fbo.framebufferWidth != width || fbo.framebufferHeight != height) {
             fbo.createBindFramebuffer(width, height)
+            // 重新设置纹理边界
+            setTextureClampToEdge(fbo)
             return true
         }
         return false

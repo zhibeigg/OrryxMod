@@ -3,54 +3,49 @@ package io.github.orryxmod.feature.bloom
 import net.minecraft.client.model.ModelBase
 import net.minecraft.client.model.ModelRenderer
 import net.minecraft.client.renderer.GlStateManager
+import net.minecraft.client.renderer.entity.RenderLivingBase
 import net.minecraft.entity.EntityLivingBase
-import net.minecraftforge.client.event.RenderLivingEvent
 import net.minecraftforge.fml.relauncher.Side
 import net.minecraftforge.fml.relauncher.SideOnly
 
 /**
- * 发光部件渲染器
- * 检测并渲染名称包含 "glow" 关键词的模型部件
+ * Bloom 部件渲染器
+ * 检测并渲染名称包含 "bloom" 关键词的模型部件
  */
 @SideOnly(Side.CLIENT)
-object GlowRenderer {
+object BloomPartRenderer {
 
     /**
      * 渲染实体的发光部件
+     * 每个骨骼使用其名称匹配的 BloomConfig 进行渲染
      */
-    fun renderGlowParts(event: RenderLivingEvent.Post<*>) {
-        val entity = event.entity
-
-        // 若该实体已被 BloomConfig 匹配并会在 WorldLast 走“整实体配置泛光”流程，
-        // 这里再渲染 glow 部件会造成同一实体叠加两次泛光，表现为某个实体亮度显著更高。
-        val customName = entity.customNameTag
-        val baseName = if (!customName.isNullOrEmpty()) customName else entity.name ?: ""
-        val displayName = entity.displayName.unformattedText
-        val formattedName = entity.displayName.formattedText
-        if (BloomConfigManager.findConfig(baseName) != null ||
-            BloomConfigManager.findConfig(displayName) != null ||
-            BloomConfigManager.findConfig(formattedName) != null
-        ) {
-            return
-        }
-
-        val renderer = event.renderer
+    fun renderBloomParts(entity: EntityLivingBase, renderer: RenderLivingBase<EntityLivingBase>) {
         val model = renderer.mainModel ?: return
 
-        // 获取发光部件
-        val glowParts = GlowModelDetector.filterGlowPartsRecursive(model)
-        if (glowParts.isEmpty()) return
+        // 获取发光部件及其匹配的配置
+        val bloomPartsWithConfig = BloomModelDetector.filterBloomPartsWithConfig(model)
+        if (bloomPartsWithConfig.isEmpty()) return
 
-        // 注册到 BloomFeature 进行泛光渲染
-        BloomFeature.registerGlowRender {
-            renderEntityGlowParts(entity, model, glowParts, event.x, event.y, event.z, event.partialRenderTick)
+        // 按配置分组骨骼
+        val groupedByConfig = bloomPartsWithConfig.groupBy { it.second }
+
+        // 为每个配置组注册单独地渲染回调
+        for ((config, partsWithConfig) in groupedByConfig) {
+            val parts = partsWithConfig.map { it.first }
+            BloomFeature.registerGlowRender({ partialTicks ->
+                val rm = net.minecraft.client.Minecraft.getMinecraft().renderManager
+                val rx = entity.lastTickPosX + (entity.posX - entity.lastTickPosX) * partialTicks - rm.viewerPosX
+                val ry = entity.lastTickPosY + (entity.posY - entity.lastTickPosY) * partialTicks - rm.viewerPosY
+                val rz = entity.lastTickPosZ + (entity.posZ - entity.lastTickPosZ) * partialTicks - rm.viewerPosZ
+                renderEntityBloomParts(entity, model, parts, rx, ry, rz, partialTicks)
+            }, config)
         }
     }
 
-    private fun renderEntityGlowParts(
+    private fun renderEntityBloomParts(
         entity: EntityLivingBase,
         model: ModelBase,
-        glowParts: List<ModelRenderer>,
+        bloomParts: List<ModelRenderer>,
         x: Double,
         y: Double,
         z: Double,
@@ -77,7 +72,7 @@ object GlowRenderer {
         GlStateManager.disableTexture2D()
         GlStateManager.disableLighting()
 
-        glowParts.forEach { part ->
+        bloomParts.forEach { part ->
             part.render(0.0625f)
         }
 

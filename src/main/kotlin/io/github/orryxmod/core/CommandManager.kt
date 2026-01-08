@@ -4,7 +4,6 @@ import io.github.orryxmod.core.registry.FeatureRegistry
 import io.github.orryxmod.feature.aim.AimConfig
 import io.github.orryxmod.feature.aim.AimFeature
 import io.github.orryxmod.feature.aim.AimModule
-import io.github.orryxmod.feature.bloom.BloomFeature
 import io.github.orryxmod.feature.effect.EffectFeature
 import io.github.orryxmod.feature.effect.FlickerConfig
 import io.github.orryxmod.feature.effect.GhostConfig
@@ -229,37 +228,6 @@ object CommandManager {
                 }
             }
 
-            // ========== 泛光效果测试命令 ==========
-            "bloom" -> {
-                val action = args.getOrNull(1)?.lowercase() ?: "test"
-                when (action) {
-                    "test", "t" -> {
-                        val state = BloomFeature.togglePersistentGlow()
-                        if (state) {
-                            sendSuccess("Bloom test ON - orange cube should appear")
-                        } else {
-                            sendSuccess("Bloom test OFF")
-                        }
-                    }
-                    "on", "enable", "1" -> {
-                        BloomFeature.Config.enabled = true
-                        sendSuccess("Bloom enabled")
-                    }
-                    "off", "disable", "0" -> {
-                        BloomFeature.Config.enabled = false
-                        sendSuccess("Bloom disabled")
-                    }
-                    "strength", "s" -> {
-                        val value = args.getOrNull(2)?.toFloatOrNull() ?: 1.5f
-                        BloomFeature.Config.strength = value
-                        sendSuccess("Bloom strength: $value")
-                    }
-                    else -> {
-                        sendError("Usage: .bloom [test|on|off|strength]")
-                    }
-                }
-            }
-
             // ========== 帮助 ==========
             "help" -> {
                 sendMessage("${TextFormatting.YELLOW}===== Commands =====")
@@ -277,8 +245,6 @@ object CommandManager {
                 sendInfo("  .nav [x] [y] [z] / .stopnav")
                 sendInfo("${TextFormatting.WHITE}--- Mouse ---")
                 sendInfo("  .mouse [show|hide|toggle]")
-                sendInfo("${TextFormatting.WHITE}--- Bloom ---")
-                sendInfo("  .bloom [test|on|off|strength <value>]")
             }
 
             else -> {
