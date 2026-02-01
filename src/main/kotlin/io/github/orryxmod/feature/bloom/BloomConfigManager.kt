@@ -1,16 +1,20 @@
 package io.github.orryxmod.feature.bloom
 
+import java.util.concurrent.ConcurrentHashMap
+
 /**
  * Bloom 配置管理器
+ * 使用线程安全的集合以支持多线程环境（网络线程写入，渲染线程读取）
  */
 object BloomConfigManager {
-    private val configs = mutableMapOf<String, BloomConfig>()
+    private val configs = ConcurrentHashMap<String, BloomConfig>()
 
     /**
      * 为实体查找匹配的配置（按优先级排序后取最高优先级）
      */
     fun findConfig(entityName: String): BloomConfig? {
-        return configs.values
+        // 创建快照进行遍历，避免并发修改
+        return configs.values.toList()
             .filter { entityName.contains(it.name, ignoreCase = true) }
             .maxByOrNull { it.priority }
     }

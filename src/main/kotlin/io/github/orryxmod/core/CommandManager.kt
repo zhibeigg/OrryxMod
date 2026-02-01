@@ -4,6 +4,9 @@ import io.github.orryxmod.core.registry.FeatureRegistry
 import io.github.orryxmod.feature.aim.AimConfig
 import io.github.orryxmod.feature.aim.AimFeature
 import io.github.orryxmod.feature.aim.AimModule
+import io.github.orryxmod.feature.bloom.BloomConfig
+import io.github.orryxmod.feature.bloom.BloomConfigManager
+import io.github.orryxmod.feature.bloom.BloomFeature
 import io.github.orryxmod.feature.effect.EffectFeature
 import io.github.orryxmod.feature.effect.FlickerConfig
 import io.github.orryxmod.feature.effect.GhostConfig
@@ -228,6 +231,109 @@ object CommandManager {
                 }
             }
 
+            // ========== 泛光测试命令 ==========
+            "bloom" -> {
+                val action = args.getOrNull(1)?.lowercase() ?: "toggle"
+                when (action) {
+                    "on", "1", "enable" -> {
+                        BloomFeature.Config.enabled = true
+                        sendSuccess("Bloom enabled")
+                    }
+                    "off", "0", "disable" -> {
+                        BloomFeature.Config.enabled = false
+                        sendSuccess("Bloom disabled")
+                    }
+                    "toggle", "t" -> {
+                        BloomFeature.Config.enabled = !BloomFeature.Config.enabled
+                        val state = if (BloomFeature.Config.enabled) "enabled" else "disabled"
+                        sendSuccess("Bloom $state")
+                    }
+                    "status", "s" -> {
+                        val state = if (BloomFeature.Config.enabled) "${TextFormatting.GREEN}enabled" else "${TextFormatting.RED}disabled"
+                        sendMessage("Bloom: $state")
+                        sendInfo("Max entities: ${BloomFeature.Config.maxBloomEntities} (0=unlimited)")
+                    }
+                    else -> {
+                        sendError("Usage: .bloom [on|off|toggle|status]")
+                    }
+                }
+            }
+            "bloomadd" -> {
+                // .bloomadd <name> [r] [g] [b] [strength] [radius] [priority]
+                val name = args.getOrNull(1)
+                if (name == null) {
+                    sendError("Usage: .bloomadd <name> [r] [g] [b] [strength] [radius] [priority]")
+                    return
+                }
+                val r = args.getOrNull(2)?.toIntOrNull() ?: 200
+                val g = args.getOrNull(3)?.toIntOrNull() ?: 200
+                val b = args.getOrNull(4)?.toIntOrNull() ?: 200
+                val strength = args.getOrNull(5)?.toFloatOrNull() ?: 1.0f
+                val radius = args.getOrNull(6)?.toFloatOrNull() ?: 32.0f
+                val priority = args.getOrNull(7)?.toIntOrNull() ?: 0
+                val config = BloomConfig(
+                    name = name,
+                    color = intArrayOf(r, g, b, 255),
+                    strength = strength,
+                    radius = radius,
+                    priority = priority
+                )
+                BloomConfigManager.update(name, config)
+                sendSuccess("Bloom config added: $name")
+                sendInfo("Color: RGB($r,$g,$b), strength=$strength, radius=$radius, priority=$priority")
+            }
+            "bloomremove" -> {
+                val name = args.getOrNull(1)
+                if (name == null) {
+                    sendError("Usage: .bloomremove <name>")
+                    return
+                }
+                BloomConfigManager.remove(name)
+                sendSuccess("Bloom config removed: $name")
+            }
+            "bloomclear" -> {
+                BloomConfigManager.clear()
+                sendSuccess("All bloom configs cleared")
+            }
+            "bloomlist" -> {
+                if (!BloomConfigManager.hasConfigs()) {
+                    sendMessage("No bloom configs")
+                    return
+                }
+                sendMessage("Bloom configs:")
+                // 由于 BloomConfigManager 没有暴露遍历方法，这里只能显示有配置
+                sendInfo("Use .bloomadd to add configs")
+            }
+            "bloomtest" -> {
+                // 为玩家自己添加泛光测试
+                val player = MC.player ?: return
+                val playerName = player.name
+                val r = args.getOrNull(1)?.toIntOrNull() ?: 0
+                val g = args.getOrNull(2)?.toIntOrNull() ?: 200
+                val b = args.getOrNull(3)?.toIntOrNull() ?: 200
+                val strength = args.getOrNull(4)?.toFloatOrNull() ?: 1.5f
+                val config = BloomConfig(
+                    name = playerName,
+                    color = intArrayOf(r, g, b, 255),
+                    strength = strength,
+                    radius = 64.0f,
+                    priority = 100
+                )
+                BloomConfigManager.update(playerName, config)
+                sendSuccess("Bloom test applied to self")
+                sendInfo("Color: RGB($r,$g,$b), strength=$strength")
+                sendInfo("Use .bloomremove $playerName to remove")
+            }
+            "bloommax" -> {
+                val max = args.getOrNull(1)?.toIntOrNull()
+                if (max == null) {
+                    sendMessage("Max bloom entities: ${BloomFeature.Config.maxBloomEntities} (0=unlimited)")
+                    return
+                }
+                BloomFeature.Config.maxBloomEntities = max
+                sendSuccess("Max bloom entities set to: $max")
+            }
+
             // ========== 帮助 ==========
             "help" -> {
                 sendMessage("${TextFormatting.YELLOW}===== Commands =====")
@@ -245,6 +351,11 @@ object CommandManager {
                 sendInfo("  .nav [x] [y] [z] / .stopnav")
                 sendInfo("${TextFormatting.WHITE}--- Mouse ---")
                 sendInfo("  .mouse [show|hide|toggle]")
+                sendInfo("${TextFormatting.WHITE}--- Bloom ---")
+                sendInfo("  .bloom [on|off|toggle|status]")
+                sendInfo("  .bloomadd <name> [r] [g] [b] [strength] [radius] [priority]")
+                sendInfo("  .bloomremove <name> / .bloomclear / .bloomlist")
+                sendInfo("  .bloomtest [r] [g] [b] [strength] / .bloommax [n]")
             }
 
             else -> {

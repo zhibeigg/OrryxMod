@@ -1,13 +1,12 @@
 package io.github.orryxmod.shared.texture
 
 import io.github.orryxmod.OrryxMod
+import io.github.orryxmod.util.MC
 import net.minecraft.client.renderer.texture.AbstractTexture
 import net.minecraft.client.renderer.texture.TextureUtil
 import net.minecraft.client.resources.IResourceManager
 import net.minecraft.util.ResourceLocation
 import java.awt.image.BufferedImage
-import java.io.IOException
-import javax.imageio.ImageIO
 
 /**
  * 纹理管理器 - 管理 mod 使用的纹理资源
@@ -35,8 +34,7 @@ object TextureManager {
         val location = ResourceLocation(OrryxMod.MOD_ID, "dynamic/$name")
         val texture = DynamicImageTexture(image)
 
-        net.minecraft.client.Minecraft.getMinecraft().textureManager
-            .loadTexture(location, texture)
+        MC.textureManager.loadTexture(location, texture)
 
         loadedTextures[name] = location
         return location
@@ -52,10 +50,25 @@ object TextureManager {
     }
 
     /**
-     * 清除缓存
+     * 清除缓存并释放动态纹理资源
      */
     fun clear() {
+        // 删除动态纹理的 OpenGL 资源
+        loadedTextures.forEach { (name, location) ->
+            if (location.path.startsWith("dynamic/")) {
+                MC.textureManager.deleteTexture(location)
+            }
+        }
         loadedTextures.clear()
+    }
+
+    /**
+     * 删除指定纹理
+     */
+    fun deleteTexture(name: String) {
+        loadedTextures.remove(name)?.let { location ->
+            MC.textureManager.deleteTexture(location)
+        }
     }
 
     /**
@@ -73,7 +86,7 @@ object TextureManager {
                     false,
                     false
                 )
-            } catch (ex: IOException) {
+            } catch (ex: Exception) {
                 OrryxMod.logger.error("Failed to load dynamic texture", ex)
             }
         }

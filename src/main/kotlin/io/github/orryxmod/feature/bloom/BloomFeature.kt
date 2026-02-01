@@ -235,10 +235,9 @@ object BloomFeature : FeatureBase() {
             val config = group.first().config
 
             // 1. 渲染该组实体到 glowFBO
-            glowFBO.bindFramebuffer(false)
+            glowFBO.bindFramebuffer(true)  // 直接绑定并设置视口
             GL11.glClearColor(0f, 0f, 0f, 0f)
             GL11.glClear(GL11.GL_COLOR_BUFFER_BIT)
-            glowFBO.bindFramebuffer(true)
 
             GlStateManager.enableDepth()
             GlStateManager.depthMask(false)
@@ -276,7 +275,6 @@ object BloomFeature : FeatureBase() {
                     renderer.doRender(entity, rx, ry, rz, entity.rotationYaw, partialTicks)
 
                     // doRender 后恢复状态
-                    glowFBO.bindFramebuffer(false)
                     GlStateManager.depthMask(false)
                     OpenGlHelper.setLightmapTextureCoords(OpenGlHelper.lightmapTexUnit, 240f, 240f)
                     GlStateManager.disableLighting()
@@ -294,6 +292,11 @@ object BloomFeature : FeatureBase() {
                     ShaderManager.setUniform1f(ShaderManager.PROGRAM_MASK, "u_alphaThreshold", 0.1f)
                 } catch (e: Exception) {
                     e.printStackTrace()
+                    // 异常时恢复 OpenGL 状态
+                    ShaderManager.releaseProgram()
+                    GL11.glDisable(GL11.GL_POLYGON_OFFSET_FILL)
+                    GlStateManager.enableLighting()
+                    GlStateManager.depthMask(true)
                 }
             }
 
@@ -342,10 +345,9 @@ object BloomFeature : FeatureBase() {
             for ((_, group) in groupedCallbacks) {
                 val config = group.first().config
 
-                glowFBO.bindFramebuffer(false)
+                glowFBO.bindFramebuffer(true)  // 直接绑定并设置视口
                 GL11.glClearColor(0f, 0f, 0f, 0f)
                 GL11.glClear(GL11.GL_COLOR_BUFFER_BIT)
-                glowFBO.bindFramebuffer(true)
 
                 GlStateManager.enableDepth()
                 GlStateManager.depthMask(false)

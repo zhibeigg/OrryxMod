@@ -21,8 +21,9 @@ apply plugin: 'org.spongepowered.mixin'
 apply plugin: 'com.github.johnrengelman.shadow'
 
 // 项目信息
-version project.modVersion
-group project.modGroup
+version = project.modVersion
+group = project.modGroup // 参考Maven命名规范: http://maven.apache.org/guides/mini/guide-naming-conventions.html
+archivesBaseName = 'orryxmod'
 buildDir project.build
 
 // 仓库
@@ -33,30 +34,35 @@ repositories {
     maven { url = 'https://jitpack.io' }
 }
 
-// Java 编译
-compileJava {
-    sourceCompatibility = targetCompatibility = '1.8'
-    options.encoding = 'UTF-8'
-    outputs.upToDateWhen { false }  // 禁用缓存，确保 refmap 正确生成
-}
-
-// Kotlin 编译
-compileKotlin.kotlinOptions {
-    freeCompilerArgs += '-Xlambdas=indy'
-    freeCompilerArgs += '-opt-in=kotlin.RequiresOptIn'
-    freeCompilerArgs += '-opt-in=kotlin.contracts.ExperimentalContracts'
-}
+sourceCompatibility = targetCompatibility = compileJava.sourceCompatibility = compileJava.targetCompatibility = '1.8'
 
 // Minecraft 配置
 minecraft {
+    // 映射可以随时更改，必须采用以下格式：
+    // snapshot_YYYYMMDD   快照版本每晚构建
+    // stable_#            稳定版本由MCP团队决定发布
+    // 使用非默认映射需自行承担风险，它们可能并不总是有效。
+    // 更改映射后只需重新运行setup任务即可更新工作区。
+    //mappings channel: 'snapshot', version: '20171003-1.12'
     mappings channel: "$mappingsChannel", version: "$mappingsVersion"
+    // makeObfSourceJar = false // 默认会生成Srg命名的源码jar。取消注释此行可禁用。
 
+
+    // accessTransformer = file('src/main/resources/META-INF/accesstransformer.cfg')
+
+    // 默认运行配置。
+    // 可以根据需要调整、删除或复制这些配置。
     runs {
         client {
             workingDirectory file('run')
+
             property 'fml.coreMods.load', 'io.github.orryxmod.OrryxCoreMod'
+
             property 'mixin.env.disableRefMap', 'true'
+            // 推荐的用户开发环境日志数据
             property 'forge.logging.markers', 'SCAN,REGISTRIES,REGISTRYDUMP'
+
+            // 推荐的控制台日志级别
             property 'forge.logging.console.level', 'debug'
         }
     }
@@ -78,14 +84,20 @@ dependencies {
     // Forge
     minecraft "net.minecraftforge:forge:$minecraftVersion-$forgeVersion"
 
-    // Mixin
-    jarLibs('org.spongepowered:mixin:0.8.5') {
+    // Mixin - 使用 compileOnly 避免被 Forge 扫描，运行时由 TweakClass 加载
+    compileOnly('org.spongepowered:mixin:0.8.5') {
         exclude module: 'commons-io'
         exclude module: 'gson'
         exclude module: 'guava'
     }
     annotationProcessor('org.spongepowered:mixin:0.8.5:processor') {
         exclude module: 'gson'
+    }
+    // Mixin 运行时依赖（仅用于开发环境）
+    runtimeOnly('org.spongepowered:mixin:0.8.5') {
+        exclude module: 'commons-io'
+        exclude module: 'gson'
+        exclude module: 'guava'
     }
 
     // 反射
@@ -157,6 +169,11 @@ shadowJar {
             'META-INF/com.android.tools/**',
             'META-INF/*.version'
 
+    // 排除 Mixin JAR 文件，避免 Forge 将其作为模组解析
+    dependencies {
+        exclude(dependency('org.spongepowered:mixin:.*'))
+    }
+
     minimize {
         exclude dependency('cabaletta:baritone-api:.*')
         exclude dependency('org.spongepowered:mixin:.*')
@@ -203,4 +220,10 @@ tasks.register('buildAll') {
 
 tasks.withType(Jar).configureEach {
     destinationDirectory.set buildDir
+}
+
+sourceSets.each {
+    def dir = layout.buildDirectory.file("sourcesSets/$it.name").get().asFile
+    it.output.resourcesDir = dir
+    it.java.outputDir = dir
 }

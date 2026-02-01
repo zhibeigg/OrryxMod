@@ -39,6 +39,9 @@ object BloomEffect {
      */
     fun resetPingPong() {
         pingPongFlag = false
+        // 清除两个缓冲区，确保每帧从干净状态开始
+        bufferA?.framebufferClear()
+        bufferB?.framebufferClear()
     }
 
     private fun updateBlurSize(width: Int, height: Int) {
@@ -116,7 +119,10 @@ object BloomEffect {
 
     private fun swapPingPong(clean: Boolean = false): Framebuffer {
         pingPongFlag = !pingPongFlag
-        val buffer = if (pingPongFlag) bufferA!! else bufferB!!
+        val buffer = if (pingPongFlag) bufferA else bufferB
+        if (buffer == null) {
+            throw IllegalStateException("PingPong buffer not initialized. Call updatePingPongSize first.")
+        }
         if (clean) {
             buffer.framebufferClear()
         }
@@ -124,7 +130,8 @@ object BloomEffect {
     }
 
     private fun getCurrentPingPong(): Framebuffer {
-        return if (pingPongFlag) bufferA!! else bufferB!!
+        val buffer = if (pingPongFlag) bufferA else bufferB
+        return buffer ?: throw IllegalStateException("PingPong buffer not initialized. Call updatePingPongSize first.")
     }
 
     /**
@@ -191,6 +198,14 @@ object BloomEffect {
 
         updateBlurSize(width, height)
         updatePingPongSize(width, height)
+
+        // 清除模糊 FBO，避免帧间累积
+        blurH2?.framebufferClear()
+        blurW2?.framebufferClear()
+        if (!fastMode) {
+            blurH?.framebufferClear()
+            blurW?.framebufferClear()
+        }
 
         // 模糊
         bindToTexture0(highlightFBO)
@@ -284,9 +299,9 @@ object BloomEffect {
 
     private fun blend(bloom: Framebuffer, backgroundFBO: Framebuffer, config: BloomConfig? = null) {
         val useTint = config != null && config.color[3] > 0
-        val tintR = if (useTint) config!!.color[0] / 255f else 1f
-        val tintG = if (useTint) config!!.color[1] / 255f else 1f
-        val tintB = if (useTint) config!!.color[2] / 255f else 1f
+        val tintR = if (useTint) config!!.color[0].coerceIn(0, 254) / 255f else 1f
+        val tintG = if (useTint) config!!.color[1].coerceIn(0, 254) / 255f else 1f
+        val tintB = if (useTint) config!!.color[2].coerceIn(0, 254) / 255f else 1f
         val intensive = config?.strength ?: strength
 
         // 绑定背景纹理到 TEXTURE0
@@ -328,7 +343,9 @@ object BloomEffect {
     /**
      * 获取最终结果 FBO
      */
-    fun getResultFBO(): Framebuffer? = getCurrentPingPong()
+    fun getResultFBO(): Framebuffer? {
+        return if (bufferA != null && bufferB != null) getCurrentPingPong() else null
+    }
 
     fun cleanup() {
         blurH?.deleteFramebuffer()

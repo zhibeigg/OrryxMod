@@ -10,6 +10,15 @@ import java.util.UUID
  */
 object PacketCodec {
 
+    /** 协议版本号 */
+    const val PROTOCOL_VERSION = 1
+
+    /** 集合大小上限，防止恶意数据包 */
+    private const val MAX_COLLECTION_SIZE = 1000
+
+    /** 字符串长度上限 */
+    private const val MAX_STRING_LENGTH = 1024
+
     /**
      * 解码：字节流 -> OrryxPacket
      */
@@ -89,10 +98,10 @@ object PacketCodec {
                     yaw = input.readDouble()
                 )
                 15 -> {
-                    val count = input.readInt()
+                    val count = input.readInt().coerceIn(0, MAX_COLLECTION_SIZE)
                     val configs = mutableMapOf<String, io.github.orryxmod.feature.bloom.BloomConfig>()
                     repeat(count) {
-                        val id = input.readUTF()
+                        val id = input.readSafeUTF()
                         val config = readBloomConfig(input)
                         configs[id] = config
                     }
@@ -140,10 +149,21 @@ object PacketCodec {
      * 从输入流读取 UUID
      */
     private fun ByteArrayDataInput.readUUID(): UUID {
-        val str = readUTF()
+        val str = readSafeUTF()
         return runCatching { UUID.fromString(str) }.getOrElse {
             throw IllegalArgumentException("Invalid UUID format: $str")
         }
+    }
+
+    /**
+     * 安全读取字符串，限制长度防止内存耗尽
+     */
+    private fun ByteArrayDataInput.readSafeUTF(): String {
+        val str = readUTF()
+        if (str.length > MAX_STRING_LENGTH) {
+            throw IllegalArgumentException("String too long: ${str.length} > $MAX_STRING_LENGTH")
+        }
+        return str
     }
 
     /**
@@ -151,7 +171,7 @@ object PacketCodec {
      */
     private fun readBloomConfig(input: ByteArrayDataInput): io.github.orryxmod.feature.bloom.BloomConfig {
         return io.github.orryxmod.feature.bloom.BloomConfig(
-            name = input.readUTF(),
+            name = input.readSafeUTF(),
             color = intArrayOf(
                 input.readInt().coerceIn(0, 255),
                 input.readInt().coerceIn(0, 255),

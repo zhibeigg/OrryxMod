@@ -50,7 +50,7 @@ object AimRenderer : RenderableEffect {
         val loc = getLocation(context.partialTicks, config)
         val targetVec = Vec3d(loc.x, loc.y, loc.z)
         val relativeVec = targetVec.subtract(
-            player.positionVector.add(0.0, player.eyeHeight.toDouble(), 0.0)
+            player.positionVector.add(Vec3d(0.0, player.eyeHeight.toDouble(), 0.0))
         )
 
         val scale = config.scale
@@ -84,14 +84,16 @@ object AimRenderer : RenderableEffect {
 
     private fun updateAnimation() {
         if (animationDirection) {
-            if (animationOffset < 500) animationOffset++ else {
+            if (animationOffset < 500) {
+                animationOffset++
+            } else {
                 animationDirection = false
-                animationOffset--
             }
         } else {
-            if (animationOffset > 0) animationOffset-- else {
-                animationDirection = true
+            if (animationOffset > 0) {
                 animationOffset--
+            } else {
+                animationDirection = true
             }
         }
     }
@@ -142,7 +144,7 @@ object AimRenderer : RenderableEffect {
                 if (refinedResult != null) {
                     return refinedResult
                 }
-                effectiveMax = player.positionVector.subtract(targetVec.x, player.posY, targetVec.z).length() - 0.1
+                effectiveMax = player.positionVector.subtract(Vec3d(targetVec.x, player.posY, targetVec.z)).length() - 0.1
                 distance = effectiveMax
                 break
             }
@@ -202,11 +204,11 @@ object AimRenderer : RenderableEffect {
 
         while (verticalOffset > -halfMax) {
             verticalOffset--
-            targetVec = lookVec.scale(forwardDistance).add(
+            targetVec = lookVec.scale(forwardDistance).add(Vec3d(
                 player.posX,
                 player.posY + player.eyeHeight + verticalOffset,
                 player.posZ
-            )
+            ))
 
             if (!player.world.isAirBlock(BlockPos(targetVec))) {
                 // 找到地面，精细化向上搜索
@@ -214,17 +216,17 @@ object AimRenderer : RenderableEffect {
                 while (refinement < 1.0) {
                     refinement += 0.1
                     verticalOffset += 0.1
-                    targetVec = lookVec.scale(forwardDistance).add(
+                    targetVec = lookVec.scale(forwardDistance).add(Vec3d(
                         player.posX,
                         player.posY + player.eyeHeight + verticalOffset,
                         player.posZ
-                    )
+                    ))
                     if (player.world.isAirBlock(BlockPos(targetVec))) {
-                        targetVec = lookVec.scale(forwardDistance).add(
+                        targetVec = lookVec.scale(forwardDistance).add(Vec3d(
                             player.posX,
                             player.posY + player.eyeHeight + verticalOffset - 0.1,
                             player.posZ
-                        )
+                        ))
                         break
                     }
                 }

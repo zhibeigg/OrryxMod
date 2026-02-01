@@ -66,17 +66,28 @@ class BakedPlayerGeometry(
         // 开始录制 Display List
         GL11.glNewList(displayListId, GL11.GL_COMPILE)
 
+        var success = false
         try {
             // 录制模型渲染调用
             // 此时 Mo' Bends 会修改动画，但这些修改会被录制到 Display List 中
             // 录制完成后，这些 GL 调用被"冻结"
             bakeModelRender(player, model, renderer)
+            success = true
+        } catch (e: Exception) {
+            // 烘焙失败，标记 Display List 为无效
+            success = false
         } finally {
             // 结束录制
             GL11.glEndList()
+
+            // 如果烘焙失败，删除 Display List 避免泄漏
+            if (!success) {
+                GL11.glDeleteLists(displayListId, 1)
+                displayListId = -1
+            }
         }
 
-        return true
+        return success
     }
 
     /**

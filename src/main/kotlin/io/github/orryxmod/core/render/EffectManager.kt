@@ -4,16 +4,18 @@ import io.github.orryxmod.OrryxMod
 import io.github.orryxmod.core.api.RenderableEffect
 import io.github.orryxmod.core.event.EventBus
 import io.github.orryxmod.core.event.Events
+import java.util.concurrent.CopyOnWriteArrayList
 
 /**
  * 效果管理器 - 统一管理所有可渲染效果
+ * 使用线程安全的集合以支持多线程环境
  */
 object EffectManager {
 
     @PublishedApi
-    internal val effects = mutableListOf<RenderableEffect>()
-    private val pendingAdd = mutableListOf<RenderableEffect>()
-    private val pendingRemove = mutableListOf<RenderableEffect>()
+    internal val effects = CopyOnWriteArrayList<RenderableEffect>()
+    private val pendingAdd = CopyOnWriteArrayList<RenderableEffect>()
+    private val pendingRemove = CopyOnWriteArrayList<RenderableEffect>()
 
     /**
      * 添加效果
@@ -65,12 +67,16 @@ object EffectManager {
         // 处理待添加
         if (pendingAdd.isNotEmpty()) {
             effects.addAll(pendingAdd)
-            effects.sortBy { it.renderPriority }
+            // CopyOnWriteArrayList 不支持原地排序，需要重新构建
+            val sorted = effects.sortedBy { it.renderPriority }
+            effects.clear()
+            effects.addAll(sorted)
             pendingAdd.clear()
         }
 
-        // 更新所有效果
-        effects.forEach { effect ->
+        // 更新所有效果（创建快照避免并发修改）
+        val effectsSnapshot = effects.toList()
+        effectsSnapshot.forEach { effect ->
             try {
                 effect.update()
             } catch (ex: Exception) {
@@ -79,7 +85,7 @@ object EffectManager {
         }
 
         // 移除失效的效果
-        val expired = effects.filter { !it.isActive }
+        val expired = effectsSnapshot.filter { !it.isActive }
         expired.forEach { effect ->
             effect.dispose()
             EventBus.publish(Events.EffectRemoved(effect))
@@ -88,13 +94,14 @@ object EffectManager {
 
         // 处理待移除
         if (pendingRemove.isNotEmpty()) {
-            pendingRemove.forEach { effect ->
+            val toRemove = pendingRemove.toList()
+            pendingRemove.clear()
+            toRemove.forEach { effect ->
                 if (effects.remove(effect)) {
                     effect.dispose()
                     EventBus.publish(Events.EffectRemoved(effect))
                 }
             }
-            pendingRemove.clear()
         }
     }
 
@@ -104,7 +111,9 @@ object EffectManager {
     fun render(context: RenderContext) {
         if (effects.isEmpty()) return
 
-        effects.forEach { effect ->
+        // 创建快照避免并发修改
+        val effectsSnapshot = effects.toList()
+        effectsSnapshot.forEach { effect ->
             if (effect.isActive) {
                 try {
                     effect.render(context)

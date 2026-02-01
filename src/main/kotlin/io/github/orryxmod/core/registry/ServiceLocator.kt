@@ -3,6 +3,14 @@ package io.github.orryxmod.core.registry
 import kotlin.reflect.KClass
 
 /**
+ * 可释放资源接口
+ * 实现此接口的服务在被移除时会自动调用 dispose() 方法
+ */
+interface Disposable {
+    fun dispose()
+}
+
+/**
  * 服务定位器 - 简单的依赖注入容器
  * 用于管理全局服务实例
  */
@@ -21,6 +29,11 @@ object ServiceLocator {
      * 注册服务实例
      */
     fun <T : Any> register(type: KClass<T>, instance: T) {
+        // 如果已存在同类型服务，先释放旧服务
+        val existing = services[type]
+        if (existing is Disposable) {
+            existing.dispose()
+        }
         services[type] = instance
     }
 
@@ -75,17 +88,26 @@ object ServiceLocator {
     }
 
     /**
-     * 移除服务
+     * 移除服务，如果服务实现了 Disposable 接口则自动调用 dispose()
      */
     @Suppress("UNCHECKED_CAST")
     fun <T : Any> remove(type: KClass<T>): T? {
-        return services.remove(type) as? T
+        val service = services.remove(type) as? T
+        if (service is Disposable) {
+            service.dispose()
+        }
+        return service
     }
 
     /**
-     * 清除所有服务
+     * 清除所有服务，自动释放实现了 Disposable 接口的服务
      */
     fun clear() {
+        services.values.forEach { service ->
+            if (service is Disposable) {
+                service.dispose()
+            }
+        }
         services.clear()
     }
 }

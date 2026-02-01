@@ -2,6 +2,7 @@ package io.github.orryxmod.feature.aim
 
 import io.github.orryxmod.util.MC
 import net.minecraft.util.math.RayTraceResult
+import net.minecraft.util.math.Vec3d
 
 /**
  * Aim 状态管理
@@ -77,11 +78,11 @@ object AimState {
         val lookVec = player.getLook(1f)
         val maxDist = currentConfig.maxDistance
 
-        val endPos = eyePos.add(
+        val endPos = eyePos.add(Vec3d(
             lookVec.x * maxDist,
             lookVec.y * maxDist,
             lookVec.z * maxDist
-        )
+        ))
 
         val rayTrace = world.rayTraceBlocks(eyePos, endPos, false, true, false)
 

@@ -94,7 +94,7 @@ class RenderFractureBlock: TileEntitySpecialRenderer<FractureBlockTileEntity>() 
         GlStateManager.translate(translate.x.toDouble(), translate.y + bouncingAnimation, translate.z.toDouble())
         GlStateManager.translate(-0.5, -0.5, -0.5)
 
-        val state = blockEntity.originalBlockState
+        val state = blockEntity.originalBlockState ?: return
         val model = blockrendererdispatcher.getModelForState(state)
 
         // 自定义渲染：为所有面使用统一光照

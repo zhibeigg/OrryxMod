@@ -74,9 +74,9 @@ class FractureBlock : BlockContainer(FractureMaterial()) {
         node.originalBlock.onBlockActivated(worldIn, pos, state, playerIn, hand, side, hitX, hitY, hitZ)
     }
 
-    override fun onEntityCollision(worldIn: World, pos: BlockPos, state: IBlockState, entityIn: Entity) {
+    override fun onEntityWalk(worldIn: World, pos: BlockPos, entityIn: Entity) {
         blockNodes[pos]?.let { node ->
-            runCatching { node.originalBlock.onEntityCollision(worldIn, pos, state, entityIn) }
+            runCatching { node.originalBlock.onEntityWalk(worldIn, pos, entityIn) }
                 .onFailure { it.printStackTrace() }
         }
     }

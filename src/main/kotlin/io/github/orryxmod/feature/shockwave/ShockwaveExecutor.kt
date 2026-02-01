@@ -38,7 +38,8 @@ object ShockwaveExecutor {
      * 圆形冲击波
      */
     fun circleSlamFracture(x: Double, y: Double, z: Double, radius: Double): Boolean {
-        return circleSlamFracture(MC.world, Vector3d(x, y, z), radius)
+        val world = MC.world ?: return false
+        return circleSlamFracture(world, Vector3d(x, y, z), radius)
     }
 
     fun circleSlamFracture(world: World, center: Vector3d, radius: Double): Boolean {
@@ -75,7 +76,8 @@ object ShockwaveExecutor {
      * 方形冲击波
      */
     fun squareSlamFracture(x: Double, y: Double, z: Double, length: Double, width: Double, yaw: Double): Boolean {
-        return squareSlamFracture(MC.world, Vector3d(x, y, z), length, width, yaw)
+        val world = MC.world ?: return false
+        return squareSlamFracture(world, Vector3d(x, y, z), length, width, yaw)
     }
 
     fun squareSlamFracture(world: World, center: Vector3d, length: Double, width: Double, yaw: Double): Boolean {
@@ -111,7 +113,8 @@ object ShockwaveExecutor {
      * 扇形冲击波
      */
     fun sectorSlamFracture(x: Double, y: Double, z: Double, radius: Double, angle: Double, yaw: Double): Boolean {
-        return sectorSlamFracture(MC.world, Vector3d(x, y, z), radius, angle, yaw)
+        val world = MC.world ?: return false
+        return sectorSlamFracture(world, Vector3d(x, y, z), radius, angle, yaw)
     }
 
     fun sectorSlamFracture(world: World, center: Vector3d, radius: Double, angle: Double, yaw: Double): Boolean {

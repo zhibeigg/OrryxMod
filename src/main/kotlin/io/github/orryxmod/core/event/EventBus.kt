@@ -1,5 +1,7 @@
 package io.github.orryxmod.core.event
 
+import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.CopyOnWriteArrayList
 import kotlin.reflect.KClass
 
 /**
@@ -14,10 +16,11 @@ private class EventHandler<T : Event>(
 
 /**
  * 事件总线 - 模块间通信的核心
+ * 使用线程安全的集合以支持多线程环境
  */
 object EventBus {
 
-    private val handlers = mutableMapOf<KClass<out Event>, MutableList<EventHandler<*>>>()
+    private val handlers = ConcurrentHashMap<KClass<out Event>, CopyOnWriteArrayList<EventHandler<*>>>()
 
     /**
      * 注册事件处理器（泛型版本）
@@ -42,9 +45,12 @@ object EventBus {
         priority: Int = 0,
         handler: (T) -> Unit
     ) {
-        val list = handlers.getOrPut(eventType) { mutableListOf() }
+        val list = handlers.getOrPut(eventType) { CopyOnWriteArrayList() }
         list.add(EventHandler(priority, handler))
-        list.sortByDescending { (it as EventHandler<*>).priority }
+        // 重新排序（CopyOnWriteArrayList 不支持 sortByDescending，需要替换整个列表）
+        val sorted = list.sortedByDescending { (it as EventHandler<*>).priority }
+        list.clear()
+        list.addAll(sorted)
     }
 
     /**

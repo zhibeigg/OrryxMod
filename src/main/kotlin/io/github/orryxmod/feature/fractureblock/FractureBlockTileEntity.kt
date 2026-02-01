@@ -22,7 +22,7 @@ class FractureBlockTileEntity(val fractureBlockState: FractureBlockState): TileE
     val rotation: Quaternionf = fractureBlockState.getRotation()!!
     val seed = MathHelper.getPositionRandom(pos)
 
-    val originalBlockState: IBlockState by lazy { fractureBlockState.getOriginalBlockState(pos) }
+    val originalBlockState: IBlockState? by lazy { fractureBlockState.getOriginalBlockState(pos) }
 
     val bouncing = fractureBlockState.getBouncing()
     val maxLifeTime = fractureBlockState.getLifeTime()
@@ -30,6 +30,8 @@ class FractureBlockTileEntity(val fractureBlockState: FractureBlockState): TileE
 
     override fun update() {
         if (world.isRemote) {
+            val blockState = originalBlockState ?: return
+
             if (maxLifeTime - lifeTime < 10) {
 
                 val offsetX = world.rand.nextDouble()
@@ -45,7 +47,7 @@ class FractureBlockTileEntity(val fractureBlockState: FractureBlockState): TileE
                     (Math.random() - 0.5) * 0.3,
                     Math.random() * 0.5,
                     (Math.random() - 0.5) * 0.3,
-                    Block.getStateId(originalBlockState)
+                    Block.getStateId(blockState)
                 ) as ParticleDigging
 
                 blockParticle.setMaxAge(10 + Random().nextInt(60))
@@ -54,7 +56,7 @@ class FractureBlockTileEntity(val fractureBlockState: FractureBlockState): TileE
             }
             if (lifeTime++ > maxLifeTime) {
                 // 使用 flag 3 恢复原方块 (会自动触发光照和渲染更新)
-                world.setBlockState(pos, originalBlockState, 3)
+                world.setBlockState(pos, blockState, 3)
                 OrryxMod.fractureBlock.blockNodes.remove(pos)
             }
         }

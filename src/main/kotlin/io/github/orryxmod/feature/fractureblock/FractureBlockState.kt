@@ -43,8 +43,8 @@ class FractureBlockState(block: FractureBlock): BlockStateContainer.StateImpleme
         return this.rotation
     }
 
-    fun getOriginalBlockState(blockPos: BlockPos): IBlockState {
-        return OrryxMod.fractureBlock.blockNodes[blockPos]!!.state
+    fun getOriginalBlockState(blockPos: BlockPos): IBlockState? {
+        return OrryxMod.fractureBlock.blockNodes[blockPos]?.state
     }
 
     fun getBouncing(): Double {
@@ -60,18 +60,18 @@ class FractureBlockState(block: FractureBlock): BlockStateContainer.StateImpleme
     }
 
     override fun getLightValue(world: IBlockAccess, pos: BlockPos): Int {
-        if (OrryxMod.fractureBlock.blockNodes.containsKey(pos)) return OrryxMod.fractureBlock.blockNodes.get(pos)!!.state.getLightValue(world, pos)
-        return super.getLightValue(world, pos)
+        return OrryxMod.fractureBlock.blockNodes[pos]?.state?.getLightValue(world, pos)
+            ?: super.getLightValue(world, pos)
     }
 
     override fun getMapColor(world: IBlockAccess, pos: BlockPos): MapColor {
-        if (OrryxMod.fractureBlock.blockNodes.containsKey(pos)) return OrryxMod.fractureBlock.blockNodes.get(pos)!!.state.getMapColor(world, pos)
-        return super.getMapColor(world, pos)
+        return OrryxMod.fractureBlock.blockNodes[pos]?.state?.getMapColor(world, pos)
+            ?: super.getMapColor(world, pos)
     }
 
     override fun getLightOpacity(world: IBlockAccess, pos: BlockPos): Int {
-        if (OrryxMod.fractureBlock.blockNodes.containsKey(pos)) return OrryxMod.fractureBlock.blockNodes.get(pos)!!.state.getLightOpacity(world, pos)
-        return super.getLightOpacity(world, pos)
+        return OrryxMod.fractureBlock.blockNodes[pos]?.state?.getLightOpacity(world, pos)
+            ?: super.getLightOpacity(world, pos)
     }
 
     override fun shouldSideBeRendered(blockAccess: IBlockAccess, pos: BlockPos, facing: EnumFacing): Boolean {
@@ -79,7 +79,7 @@ class FractureBlockState(block: FractureBlock): BlockStateContainer.StateImpleme
     }
 
     override fun getPackedLightmapCoords(worldIn: IBlockAccess, pos: BlockPos): Int {
-        if (OrryxMod.fractureBlock.blockNodes.containsKey(pos)) return OrryxMod.fractureBlock.blockNodes.get(pos)!!.state.getPackedLightmapCoords(worldIn, pos)
-        return super.getPackedLightmapCoords(worldIn, pos)
+        return OrryxMod.fractureBlock.blockNodes[pos]?.state?.getPackedLightmapCoords(worldIn, pos)
+            ?: super.getPackedLightmapCoords(worldIn, pos)
     }
 }
