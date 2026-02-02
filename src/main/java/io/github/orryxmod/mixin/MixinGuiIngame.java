@@ -10,8 +10,11 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 @Mixin(value = GuiIngame.class)
 public abstract class MixinGuiIngame {
 
-    @Shadow protected String overlayMessage = "";
-    @Shadow protected int overlayMessageTime;
+    @Shadow
+    protected String overlayMessage;
+
+    @Shadow
+    protected int overlayMessageTime;
 
     @Inject(method = "renderGameOverlay", at = @At("HEAD"))
     public void renderGameOverlay(float partialTicks, CallbackInfo ci) {

@@ -21,5 +21,5 @@ void main(void){
     out_colour += texture2D(originalTexture, textureCoords + pixelSize * 3.) * 0.065984;
     out_colour += texture2D(originalTexture, textureCoords + pixelSize * 4.) * 0.028002;
     out_colour += texture2D(originalTexture, textureCoords + pixelSize * 5.) * 0.0093;
-    gl_FragColor = out_colour;
+    gl_FragColor = vec4(out_colour.rgb, 1.0);
 }
