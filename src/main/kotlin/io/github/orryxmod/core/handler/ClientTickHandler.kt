@@ -1,5 +1,6 @@
 package io.github.orryxmod.core.handler
 
+import io.github.orryxmod.OrryxMod
 import io.github.orryxmod.core.event.EventBus
 import io.github.orryxmod.core.event.Events
 import io.github.orryxmod.core.render.EffectManager
@@ -14,16 +15,20 @@ object ClientTickHandler {
 
     @SubscribeEvent
     fun onClientTick(event: TickEvent.ClientTickEvent) {
-        when (event.phase) {
-            TickEvent.Phase.START -> {
-                EventBus.publish(Events.ClientTick(Events.ClientTick.Phase.START))
-            }
-            TickEvent.Phase.END -> {
-                // 更新所有效果
-                EffectManager.update()
+        try {
+            when (event.phase) {
+                TickEvent.Phase.START -> {
+                    EventBus.publish(Events.ClientTick(Events.ClientTick.Phase.START))
+                }
+                TickEvent.Phase.END -> {
+                    // 更新所有效果
+                    EffectManager.update()
 
-                EventBus.publish(Events.ClientTick(Events.ClientTick.Phase.END))
+                    EventBus.publish(Events.ClientTick(Events.ClientTick.Phase.END))
+                }
             }
+        } catch (ex: Exception) {
+            OrryxMod.logger.error("[ClientTickHandler] Error in tick handler", ex)
         }
     }
 }

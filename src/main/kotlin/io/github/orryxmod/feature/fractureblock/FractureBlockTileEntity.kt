@@ -18,8 +18,8 @@ import java.util.*
 
 class FractureBlockTileEntity(val fractureBlockState: FractureBlockState): TileEntity(), ITickable {
 
-    val translate: Vector3f = fractureBlockState.getTranslate()!!
-    val rotation: Quaternionf = fractureBlockState.getRotation()!!
+    val translate: Vector3f = fractureBlockState.getTranslate() ?: Vector3f()
+    val rotation: Quaternionf = fractureBlockState.getRotation() ?: Quaternionf()
     val seed = MathHelper.getPositionRandom(pos)
 
     val originalBlockState: IBlockState? by lazy { fractureBlockState.getOriginalBlockState(pos) }
@@ -67,11 +67,22 @@ class FractureBlockTileEntity(val fractureBlockState: FractureBlockState): TileE
     }
 
     override fun getRenderBoundingBox(): AxisAlignedBB {
-        return INFINITE_EXTENT_AABB
+        // 使用合理大小的 AABB 替代 INFINITE_EXTENT_AABB，
+        // 允许视锥体剔除，避免大量断裂方块时的渲染性能问题
+        return AxisAlignedBB(
+            pos.x - 1.0, pos.y - 1.0, pos.z - 1.0,
+            pos.x + 2.0, pos.y + 2.0, pos.z + 2.0
+        )
     }
 
     override fun shouldRenderInPass(pass: Int): Boolean {
         return true
+    }
+
+    override fun invalidate() {
+        super.invalidate()
+        // TileEntity 被销毁时（区块卸载、世界切换等），清理 blockNodes 条目
+        OrryxMod.fractureBlock.blockNodes.remove(pos)
     }
 
     override fun shouldRefresh(world: World, pos: BlockPos, oldState: IBlockState, newSate: IBlockState): Boolean {

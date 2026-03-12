@@ -12,6 +12,9 @@ import java.util.concurrent.CopyOnWriteArrayList
  */
 object EffectManager {
 
+    /** 最大效果数量，防止恶意服务端通过大量网络包导致内存/渲染爆炸 */
+    private const val MAX_EFFECTS = 200
+
     @PublishedApi
     internal val effects = CopyOnWriteArrayList<RenderableEffect>()
     private val pendingAdd = CopyOnWriteArrayList<RenderableEffect>()
@@ -21,6 +24,10 @@ object EffectManager {
      * 添加效果
      */
     fun add(effect: RenderableEffect) {
+        if (effects.size + pendingAdd.size >= MAX_EFFECTS) {
+            OrryxMod.logger.warn("[EffectManager] Effect limit reached ($MAX_EFFECTS), rejecting: ${effect.id}")
+            return
+        }
         pendingAdd.add(effect)
         EventBus.publish(Events.EffectAdded(effect))
     }
@@ -66,11 +73,14 @@ object EffectManager {
     fun update() {
         // 处理待添加
         if (pendingAdd.isNotEmpty()) {
-            effects.addAll(pendingAdd)
-            // CopyOnWriteArrayList 不支持原地排序，需要重新构建
-            val sorted = effects.sortedBy { it.renderPriority }
+            // 构建排序后的新列表，避免 clear+addAll 的非原子窗口
+            // （渲染线程在 clear 和 addAll 之间调用 render() 会看到空列表）
+            val merged = ArrayList<RenderableEffect>(effects.size + pendingAdd.size)
+            merged.addAll(effects)
+            merged.addAll(pendingAdd)
+            merged.sortBy { it.renderPriority }
             effects.clear()
-            effects.addAll(sorted)
+            effects.addAll(merged)
             pendingAdd.clear()
         }
 

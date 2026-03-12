@@ -11,6 +11,9 @@ import net.minecraftforge.fml.common.network.FMLNetworkEvent
  */
 object NetworkHandler {
 
+    /** 单个网络包最大字节数，防止恶意超大包导致 OOM */
+    private const val MAX_PACKET_SIZE = 65536
+
     @SubscribeEvent
     fun onPacketReceived(event: FMLNetworkEvent.ClientCustomPacketEvent) {
         try {
@@ -18,6 +21,11 @@ object NetworkHandler {
             if (fmlPacket.channel() != "orryxmod:main") return
 
             val buffer = fmlPacket.payload()
+            if (buffer.readableBytes() > MAX_PACKET_SIZE) {
+                OrryxMod.logger.warn("[Network] Packet too large: ${buffer.readableBytes()} bytes (max: $MAX_PACKET_SIZE)")
+                return
+            }
+
             val bytes = ByteArray(buffer.readableBytes())
             buffer.readBytes(bytes)
 

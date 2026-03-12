@@ -374,7 +374,9 @@ object ShockwaveExecutor {
         bounce: Double,
         lifetime: Int
     ) {
-        val fractureBlockState = OrryxMod.fractureBlock.defaultState as FractureBlockState
+        // 每次创建新的 FractureBlockState 实例，避免修改 defaultState 单例
+        // 同一 tick 内多个冲击波并发执行时，共享 defaultState 会导致数据覆盖
+        val fractureBlockState = FractureBlockState(OrryxMod.fractureBlock)
         fractureBlockState.setFractureInfo(pos, state, translation, rotation, bounce, lifetime)
 
         world.setBlockState(pos, fractureBlockState, 3)

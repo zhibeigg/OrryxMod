@@ -1,6 +1,7 @@
 package io.github.orryxmod.core
 
 import net.minecraft.entity.player.EntityPlayer
+import java.lang.ref.WeakReference
 
 object EntityTrackerRegistry {
 
@@ -35,31 +36,34 @@ object EntityTrackerRegistry {
         }
     }
 
-    class EntityInfo(val tracked: EntityPlayer) {
+    class EntityInfo(entity: EntityPlayer) {
+        private val trackedRef = WeakReference(entity)
+        /** 获取被追踪的实体（可能已被 GC 回收） */
+        val tracked: EntityPlayer? get() = trackedRef.get()
 
-        var posX: Double = tracked.posX
-        var posY: Double = tracked.posY
-        var posZ: Double = tracked.posZ
+        var posX: Double = entity.posX
+        var posY: Double = entity.posY
+        var posZ: Double = entity.posZ
 
-        var lastTickPosX: Double = tracked.lastTickPosX
-        var lastTickPosY: Double = tracked.lastTickPosY
-        var lastTickPosZ: Double = tracked.lastTickPosZ
+        var lastTickPosX: Double = entity.lastTickPosX
+        var lastTickPosY: Double = entity.lastTickPosY
+        var lastTickPosZ: Double = entity.lastTickPosZ
 
-        var renderYawOffset: Float = tracked.renderYawOffset
-        var rotationYawHead: Float = tracked.rotationYawHead
-        var rotationPitch: Float = if (tracked.ticksElytraFlying > 4) Math.toDegrees(-(Math.PI.toFloat() / 4f).toDouble()).toFloat() else tracked.rotationPitch
+        var renderYawOffset: Float = entity.renderYawOffset
+        var rotationYawHead: Float = entity.rotationYawHead
+        var rotationPitch: Float = if (entity.ticksElytraFlying > 4) Math.toDegrees(-(Math.PI.toFloat() / 4f).toDouble()).toFloat() else entity.rotationPitch
 
-        var limbSwing: Float = tracked.limbSwing
-        var limbSwingAmount: Float = tracked.limbSwingAmount
+        var limbSwing: Float = entity.limbSwing
+        var limbSwingAmount: Float = entity.limbSwingAmount
 
-        var sneaking: Boolean = tracked.isSneaking
-        var sleeping: Boolean = tracked.isPlayerSleeping
-        var sprinting: Boolean = tracked.isSprinting
-        var invisible: Boolean = tracked.isInvisible
-        var elytraFlying: Boolean = tracked.ticksElytraFlying > 4
+        var sneaking: Boolean = entity.isSneaking
+        var sleeping: Boolean = entity.isPlayerSleeping
+        var sprinting: Boolean = entity.isSprinting
+        var invisible: Boolean = entity.isInvisible
+        var elytraFlying: Boolean = entity.ticksElytraFlying > 4
 
-        var height: Float = tracked.height
+        var height: Float = entity.height
 
-        var lastTick: Int = tracked.ticksExisted
+        var lastTick: Int = entity.ticksExisted
     }
 }

@@ -13,7 +13,7 @@ class EffectTexture : AbstractTexture {
     private var image: BufferedImage
 
     constructor(file: File) {
-        this.image = TextureUtil.readBufferedImage(FileInputStream(file))
+        this.image = FileInputStream(file).use { TextureUtil.readBufferedImage(it) }
     }
 
     constructor(image: BufferedImage) {

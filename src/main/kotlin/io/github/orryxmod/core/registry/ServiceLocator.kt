@@ -1,5 +1,6 @@
 package io.github.orryxmod.core.registry
 
+import java.util.concurrent.ConcurrentHashMap
 import kotlin.reflect.KClass
 
 /**
@@ -16,7 +17,7 @@ interface Disposable {
  */
 object ServiceLocator {
 
-    private val services = mutableMapOf<KClass<*>, Any>()
+    private val services = ConcurrentHashMap<KClass<*>, Any>()
 
     /**
      * 注册服务实例（泛型版本）

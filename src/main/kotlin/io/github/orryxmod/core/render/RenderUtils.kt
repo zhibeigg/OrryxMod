@@ -107,8 +107,11 @@ object RenderUtils {
 
             val prevShadow = renderManager.isRenderShadow
             renderManager.isRenderShadow = false
-            renderManager.renderEntity(entity, 0.0, 0.0, 0.0, yaw, 1f, false)
-            renderManager.isRenderShadow = prevShadow
+            try {
+                renderManager.renderEntity(entity, 0.0, 0.0, 0.0, yaw, 1f, false)
+            } finally {
+                renderManager.isRenderShadow = prevShadow
+            }
         }
     }
 }

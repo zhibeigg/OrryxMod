@@ -21,7 +21,7 @@ object BaritoneUtils {
         get() = primary?.pathingBehavior?.isPathing ?: false
 
     val isActive
-        get() = primary?.customGoalProcess?.isActive ?: false || primary?.pathingControlManager?.mostRecentInControl()?.orElse(null)?.isActive ?: false
+        get() = (primary?.customGoalProcess?.isActive ?: false) || (primary?.pathingControlManager?.mostRecentInControl()?.orElse(null)?.isActive ?: false)
 
     fun cancelEverything() = primary?.pathingBehavior?.cancelEverything()
 

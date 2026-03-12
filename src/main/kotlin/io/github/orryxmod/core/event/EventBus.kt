@@ -45,12 +45,14 @@ object EventBus {
         priority: Int = 0,
         handler: (T) -> Unit
     ) {
-        val list = handlers.getOrPut(eventType) { CopyOnWriteArrayList() }
-        list.add(EventHandler(priority, handler))
-        // 重新排序（CopyOnWriteArrayList 不支持 sortByDescending，需要替换整个列表）
-        val sorted = list.sortedByDescending { (it as EventHandler<*>).priority }
-        list.clear()
-        list.addAll(sorted)
+        // 使用 synchronized 保证 subscribe 操作的原子性，
+        // 避免并发 subscribe 互相清除 handler，以及 publish 看到空列表
+        synchronized(handlers) {
+            val list = handlers.getOrPut(eventType) { CopyOnWriteArrayList() }
+            list.add(EventHandler(priority, handler))
+            val sorted = list.sortedByDescending { (it as EventHandler<*>).priority }
+            handlers[eventType] = CopyOnWriteArrayList(sorted)
+        }
     }
 
     /**

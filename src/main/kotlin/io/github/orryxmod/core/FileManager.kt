@@ -54,7 +54,10 @@ object FileManager {
             return file
         }
         val bytes = javaClass.classLoader.getResourceAsStream(source)?.use { it.readBytes() }
-            ?: error("resource not found: $source")
+        if (bytes == null) {
+            logger.error("Resource not found: $source")
+            throw IOException("Resource not found: $source")
+        }
         newFile(file).writeBytes(bytes)
         return file
     }

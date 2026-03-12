@@ -114,6 +114,10 @@ object FeatureRegistry {
     fun clear() {
         features.clear()
         featuresByClass.clear()
+        // 同步清理 EventBus 和 PacketDispatcher 中的 handler，
+        // 防止 Feature 重新注册时旧 handler 仍然存在导致重复执行
+        EventBus.clear()
+        PacketDispatcher.clear()
     }
 
     /**

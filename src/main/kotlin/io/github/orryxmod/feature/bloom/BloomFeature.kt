@@ -291,12 +291,13 @@ object BloomFeature : FeatureBase() {
                     ShaderManager.setUniform1i(ShaderManager.PROGRAM_MASK, "u_texture", 0)
                     ShaderManager.setUniform1f(ShaderManager.PROGRAM_MASK, "u_alphaThreshold", 0.1f)
                 } catch (e: Exception) {
-                    e.printStackTrace()
-                    // 异常时恢复 OpenGL 状态
+                    io.github.orryxmod.OrryxMod.logger.error("[Bloom] Error rendering entity", e)
+                    // 异常时恢复 OpenGL 状态并跳过该实体
                     ShaderManager.releaseProgram()
                     GL11.glDisable(GL11.GL_POLYGON_OFFSET_FILL)
                     GlStateManager.enableLighting()
                     GlStateManager.depthMask(true)
+                    continue
                 }
             }
 

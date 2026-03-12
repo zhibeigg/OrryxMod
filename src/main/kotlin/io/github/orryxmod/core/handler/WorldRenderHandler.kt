@@ -1,5 +1,6 @@
 package io.github.orryxmod.core.handler
 
+import io.github.orryxmod.OrryxMod
 import io.github.orryxmod.core.event.EventBus
 import io.github.orryxmod.core.event.Events
 import io.github.orryxmod.core.render.EffectManager
@@ -15,12 +16,16 @@ object WorldRenderHandler {
 
     @SubscribeEvent
     fun onRenderWorldLast(event: RenderWorldLastEvent) {
-        val context = RenderContext.create(event.partialTicks)
+        try {
+            val context = RenderContext.create(event.partialTicks)
 
-        // 发布渲染事件
-        EventBus.publish(Events.WorldRender(event.partialTicks, context))
+            // 发布渲染事件
+            EventBus.publish(Events.WorldRender(event.partialTicks, context))
 
-        // 渲染所有效果
-        EffectManager.render(context)
+            // 渲染所有效果
+            EffectManager.render(context)
+        } catch (ex: Exception) {
+            OrryxMod.logger.error("[WorldRenderHandler] Error in render handler", ex)
+        }
     }
 }

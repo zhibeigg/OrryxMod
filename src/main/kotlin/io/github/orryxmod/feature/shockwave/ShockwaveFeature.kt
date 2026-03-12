@@ -13,21 +13,34 @@ import io.github.orryxmod.util.MC
 @Feature("shockwave", description = "地面冲击波")
 object ShockwaveFeature : FeatureBase() {
 
+    /** 冲击波参数上限，防止恶意服务端发送超大参数导致客户端卡死 */
+    private const val MAX_SHOCKWAVE_RADIUS = 50.0
+
     // ========== 网络包处理 ==========
 
     @OnPacket(OrryxPacket.CircleShockwave::class)
     fun onCircleShockwave(packet: OrryxPacket.CircleShockwave) {
-        circleSlamFracture(packet.x, packet.y, packet.z, packet.radius)
+        circleSlamFracture(packet.x, packet.y, packet.z, packet.radius.coerceIn(0.5, MAX_SHOCKWAVE_RADIUS))
     }
 
     @OnPacket(OrryxPacket.SquareShockwave::class)
     fun onSquareShockwave(packet: OrryxPacket.SquareShockwave) {
-        squareSlamFracture(packet.x, packet.y, packet.z, packet.length, packet.width, packet.yaw)
+        squareSlamFracture(
+            packet.x, packet.y, packet.z,
+            packet.length.coerceIn(0.5, MAX_SHOCKWAVE_RADIUS),
+            packet.width.coerceIn(0.5, MAX_SHOCKWAVE_RADIUS),
+            packet.yaw
+        )
     }
 
     @OnPacket(OrryxPacket.SectorShockwave::class)
     fun onSectorShockwave(packet: OrryxPacket.SectorShockwave) {
-        sectorSlamFracture(packet.x, packet.y, packet.z, packet.radius, packet.angle, packet.yaw)
+        sectorSlamFracture(
+            packet.x, packet.y, packet.z,
+            packet.radius.coerceIn(0.5, MAX_SHOCKWAVE_RADIUS),
+            packet.angle.coerceIn(0.0, 360.0),
+            packet.yaw
+        )
     }
 
     // ========== 公共 API ==========

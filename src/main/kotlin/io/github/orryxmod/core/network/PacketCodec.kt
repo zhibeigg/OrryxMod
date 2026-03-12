@@ -26,8 +26,8 @@ object PacketCodec {
         return try {
             when (val id = input.readInt()) {
                 1 -> OrryxPacket.AimRequest(
-                    skill = input.readUTF(),
-                    module = input.readUTF(),
+                    skill = input.readSafeUTF(),
+                    module = input.readSafeUTF(),
                     scale = input.readDouble(),
                     maxDistance = input.readDouble()
                 )
@@ -52,7 +52,7 @@ object PacketCodec {
                 )
                 8 -> OrryxPacket.EntityShowAdd(
                     uuid = input.readUUID(),
-                    group = input.readUTF(),
+                    group = input.readSafeUTF(),
                     x = input.readDouble(),
                     y = input.readDouble(),
                     z = input.readDouble(),
@@ -66,7 +66,7 @@ object PacketCodec {
                 )
                 9 -> OrryxPacket.EntityShowRemove(
                     uuid = input.readUUID(),
-                    group = input.readUTF()
+                    group = input.readSafeUTF()
                 )
                 10 -> OrryxPacket.NavigationStart(
                     x = input.readInt(),
@@ -108,11 +108,11 @@ object PacketCodec {
                     OrryxPacket.BloomConfigSync(configs)
                 }
                 16 -> OrryxPacket.BloomConfigUpdate(
-                    id = input.readUTF(),
+                    id = input.readSafeUTF(),
                     config = readBloomConfig(input)
                 )
                 17 -> OrryxPacket.BloomConfigRemove(
-                    id = input.readUTF()
+                    id = input.readSafeUTF()
                 )
                 else -> {
                     OrryxMod.logger.warn("Unknown packet ID: $id")
