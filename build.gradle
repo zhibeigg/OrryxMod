@@ -81,6 +81,15 @@ configurations {
 
 // 依赖
 dependencies {
+    // 测试
+    testImplementation 'org.junit.jupiter:junit-jupiter:5.10.2'
+    testImplementation "io.mockk:mockk:1.13.10"
+    testImplementation "org.jetbrains.kotlin:kotlin-test-junit5:$kotlinVersion"
+    testImplementation "org.jetbrains.kotlinx:kotlinx-coroutines-test:$kotlinxCoroutinesVersion"
+    testImplementation 'com.google.guava:guava:31.1-jre'
+    testImplementation 'org.joml:joml:1.10.7'
+    testImplementation "org.jetbrains.kotlin:kotlin-reflect:$kotlinVersion"
+
     // Forge
     minecraft "net.minecraftforge:forge:$minecraftVersion-$forgeVersion"
 
@@ -226,4 +235,26 @@ sourceSets.each {
     def dir = layout.buildDirectory.file("sourcesSets/$it.name").get().asFile
     it.output.resourcesDir = dir
     it.java.outputDir = dir
+}
+
+// 测试配置
+sourceSets {
+    test {
+        kotlin.srcDirs = ['src/test/kotlin']
+        compileClasspath += sourceSets.main.output + sourceSets.main.compileClasspath
+        runtimeClasspath += sourceSets.main.output + sourceSets.main.runtimeClasspath
+    }
+}
+
+tasks.register('unitTest', Test) {
+    group 'verification'
+    description '运行单元测试'
+    useJUnitPlatform()
+    testClassesDirs = sourceSets.test.output.classesDirs
+    classpath = sourceSets.test.runtimeClasspath
+
+    testLogging {
+        events 'passed', 'skipped', 'failed'
+        showStandardStreams = true
+    }
 }
