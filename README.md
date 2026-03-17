@@ -159,4 +159,4 @@ gradle shadowJar
 
 ## 许可证
 
-本项目尚未添加许可证文件。如需开源发布，请在项目根目录添加 `LICENSE` 文件。
+本项目基于 [MIT License](LICENSE) 开源。
