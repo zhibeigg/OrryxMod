@@ -36,6 +36,10 @@ repositories {
 
 sourceCompatibility = targetCompatibility = compileJava.sourceCompatibility = compileJava.targetCompatibility = '1.8'
 
+tasks.withType(org.jetbrains.kotlin.gradle.tasks.KotlinCompile).configureEach {
+    kotlinOptions.jvmTarget = '1.8'
+}
+
 // Minecraft 配置
 minecraft {
     // 映射可以随时更改，必须采用以下格式：
@@ -85,7 +89,6 @@ dependencies {
     testImplementation 'org.junit.jupiter:junit-jupiter:5.10.2'
     testImplementation "io.mockk:mockk:1.13.10"
     testImplementation "org.jetbrains.kotlin:kotlin-test-junit5:$kotlinVersion"
-    testImplementation "org.jetbrains.kotlinx:kotlinx-coroutines-test:$kotlinxCoroutinesVersion"
     testImplementation 'com.google.guava:guava:31.1-jre'
     testImplementation 'org.joml:joml:1.10.7'
     testImplementation "org.jetbrains.kotlin:kotlin-reflect:$kotlinVersion"
@@ -109,10 +112,6 @@ dependencies {
         exclude module: 'guava'
     }
 
-    // 反射
-    //noinspection GradlePackageUpdate
-    jarLibs 'org.reflections:reflections:0.9.12'
-
     // Kotlin
     jarLibs("org.jetbrains.kotlin:kotlin-stdlib-jdk8:$kotlinVersion") {
         exclude module: 'kotlin-stdlib-common'
@@ -121,11 +120,6 @@ dependencies {
     jarLibs("org.jetbrains.kotlin:kotlin-reflect:$kotlinVersion") {
         exclude module: 'kotlin-stdlib'
     }
-    jarLibs("org.jetbrains.kotlinx:kotlinx-coroutines-core:$kotlinxCoroutinesVersion") {
-        exclude module: 'kotlin-stdlib-jdk8'
-        exclude module: 'kotlin-stdlib-common'
-    }
-
     // 工具库
     jarLibs 'org.joml:joml:1.10.7'
 
@@ -187,7 +181,6 @@ shadowJar {
         exclude dependency('cabaletta:baritone-api:.*')
         exclude dependency('org.spongepowered:mixin:.*')
         exclude dependency('org.jetbrains.kotlin:.*')
-        exclude dependency('org.jetbrains.kotlinx:.*')
     }
 
     configurations = [project.configurations.jarLibs, project.configurations.onlyJarLibs]

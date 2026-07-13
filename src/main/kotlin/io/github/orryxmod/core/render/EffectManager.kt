@@ -4,6 +4,8 @@ import io.github.orryxmod.OrryxMod
 import io.github.orryxmod.core.api.RenderableEffect
 import io.github.orryxmod.core.event.EventBus
 import io.github.orryxmod.core.event.Events
+import java.util.Collections
+import java.util.IdentityHashMap
 import java.util.concurrent.CopyOnWriteArrayList
 
 /**
@@ -19,31 +21,74 @@ object EffectManager {
     internal val effects = CopyOnWriteArrayList<RenderableEffect>()
     private val pendingAdd = CopyOnWriteArrayList<RenderableEffect>()
     private val pendingRemove = CopyOnWriteArrayList<RenderableEffect>()
+    private val persistentEffects = Collections.newSetFromMap(
+        IdentityHashMap<RenderableEffect, Boolean>()
+    )
+    private val mutationLock = Any()
 
     /**
      * 添加效果
      */
-    fun add(effect: RenderableEffect) {
-        if (effects.size + pendingAdd.size >= MAX_EFFECTS) {
-            OrryxMod.logger.warn("[EffectManager] Effect limit reached ($MAX_EFFECTS), rejecting: ${effect.id}")
-            return
+    fun add(effect: RenderableEffect): Boolean = addInternal(effect, persistent = false)
+
+    /**
+     * 添加跨会话保留的基础渲染器；断线清理仅移除会话效果。
+     */
+    fun addPersistent(effect: RenderableEffect): Boolean = addInternal(effect, persistent = true)
+
+    private fun addInternal(effect: RenderableEffect, persistent: Boolean): Boolean {
+        val accepted = synchronized(mutationLock) {
+            val cancelledRemoval = removeIdentity(pendingRemove, effect)
+            val alreadyTracked = effects.any { it === effect } || pendingAdd.any { it === effect }
+
+            when {
+                alreadyTracked && cancelledRemoval -> {
+                    if (persistent) persistentEffects.add(effect)
+                    true
+                }
+                alreadyTracked -> {
+                    if (persistent) persistentEffects.add(effect)
+                    false
+                }
+                effects.size + pendingAdd.size >= MAX_EFFECTS -> false
+                else -> {
+                    pendingAdd.add(effect)
+                    if (persistent) persistentEffects.add(effect)
+                    true
+                }
+            }
         }
-        pendingAdd.add(effect)
+
+        if (!accepted) {
+            OrryxMod.logger.warn("[EffectManager] Effect rejected: ${effect.id}")
+            return false
+        }
         EventBus.publish(Events.EffectAdded(effect))
+        return true
     }
 
     /**
      * 移除效果
      */
     fun remove(effect: RenderableEffect) {
-        pendingRemove.add(effect)
+        synchronized(mutationLock) {
+            persistentEffects.remove(effect)
+            if (pendingRemove.none { it === effect }) {
+                pendingRemove.add(effect)
+            }
+        }
     }
 
     /**
      * 按 ID 移除效果
      */
     fun removeById(id: String) {
-        effects.filter { it.id == id }.forEach { remove(it) }
+        for (effect in effects) {
+            if (effect.id == id) remove(effect)
+        }
+        for (effect in pendingAdd) {
+            if (effect.id == id) remove(effect)
+        }
     }
 
     /**
@@ -63,30 +108,25 @@ object EffectManager {
     /**
      * 检查是否存在指定 ID 的效果
      */
-    fun exists(id: String): Boolean {
-        return effects.any { it.id == id } || pendingAdd.any { it.id == id }
+    fun exists(id: String): Boolean = synchronized(mutationLock) {
+        effects.any { it.id == id && pendingRemove.none { pending -> pending === it } } ||
+            pendingAdd.any { it.id == id && pendingRemove.none { pending -> pending === it } }
     }
 
     /**
      * 每 tick 更新
      */
     fun update() {
-        // 处理待添加
-        if (pendingAdd.isNotEmpty()) {
-            // 构建排序后的新列表，避免 clear+addAll 的非原子窗口
-            // （渲染线程在 clear 和 addAll 之间调用 render() 会看到空列表）
-            val merged = ArrayList<RenderableEffect>(effects.size + pendingAdd.size)
-            merged.addAll(effects)
-            merged.addAll(pendingAdd)
-            merged.sortBy { it.renderPriority }
-            effects.clear()
-            effects.addAll(merged)
-            pendingAdd.clear()
+        synchronized(mutationLock) {
+            if (pendingAdd.isNotEmpty()) {
+                effects.addAll(pendingAdd)
+                pendingAdd.clear()
+                effects.sortWith(compareBy { it.renderPriority })
+            }
         }
 
-        // 更新所有效果（创建快照避免并发修改）
-        val effectsSnapshot = effects.toList()
-        effectsSnapshot.forEach { effect ->
+        // CopyOnWriteArrayList 的迭代器本身就是稳定快照，无需额外 toList。
+        for (effect in effects) {
             try {
                 effect.update()
             } catch (ex: Exception) {
@@ -94,24 +134,41 @@ object EffectManager {
             }
         }
 
-        // 移除失效的效果
-        val expired = effectsSnapshot.filter { !it.isActive }
-        expired.forEach { effect ->
-            effect.dispose()
-            EventBus.publish(Events.EffectRemoved(effect))
-        }
-        effects.removeAll(expired.toSet())
-
-        // 处理待移除
-        if (pendingRemove.isNotEmpty()) {
-            val toRemove = pendingRemove.toList()
-            pendingRemove.clear()
-            toRemove.forEach { effect ->
-                if (effects.remove(effect)) {
-                    effect.dispose()
-                    EventBus.publish(Events.EffectRemoved(effect))
+        for (effect in effects) {
+            val removed = synchronized(mutationLock) {
+                // isActive 必须在与删除相同的临界区内复检，避免并发恢复后仍被旧快照删除。
+                if (!effect.isActive && removeIdentity(effects, effect)) {
+                    persistentEffects.remove(effect)
+                    removeIdentity(pendingRemove, effect)
+                    true
+                } else {
+                    false
                 }
             }
+            if (removed) {
+                disposeSafely(effect)
+                publishRemoved(effect)
+            }
+        }
+
+        val removals = synchronized(mutationLock) {
+            val removedEffects = ArrayList<RenderableEffect>(pendingRemove.size)
+            val seen = IdentityHashMap<RenderableEffect, Boolean>()
+
+            for (effect in pendingRemove) {
+                val removedFromEffects = removeIdentity(effects, effect)
+                val removedFromPendingAdd = removeIdentity(pendingAdd, effect)
+                persistentEffects.remove(effect)
+                if ((removedFromEffects || removedFromPendingAdd) && seen.put(effect, true) == null) {
+                    removedEffects.add(effect)
+                }
+            }
+            pendingRemove.clear()
+            removedEffects
+        }
+        for (effect in removals) {
+            disposeSafely(effect)
+            publishRemoved(effect)
         }
     }
 
@@ -121,9 +178,7 @@ object EffectManager {
     fun render(context: RenderContext) {
         if (effects.isEmpty()) return
 
-        // 创建快照避免并发修改
-        val effectsSnapshot = effects.toList()
-        effectsSnapshot.forEach { effect ->
+        for (effect in effects) {
             if (effect.isActive) {
                 try {
                     effect.render(context)
@@ -135,13 +190,78 @@ object EffectManager {
     }
 
     /**
-     * 清除所有效果
+     * 清除当前服务器会话创建的效果，保留 Aim/Collider 等基础渲染器。
+     */
+    fun clearSessionEffects() {
+        val toDispose = synchronized(mutationLock) {
+            collectAndRemoveEffects { effect -> effect !in persistentEffects }
+        }
+
+        for (effect in toDispose) {
+            disposeSafely(effect)
+        }
+    }
+
+    /**
+     * 清除所有效果，包括跨会话保留的基础渲染器。
      */
     fun clear() {
-        effects.forEach { it.dispose() }
-        effects.clear()
-        pendingAdd.clear()
-        pendingRemove.clear()
+        val toDispose = synchronized(mutationLock) {
+            val collected = collectAndRemoveEffects { true }
+            persistentEffects.clear()
+            collected
+        }
+
+        for (effect in toDispose) {
+            disposeSafely(effect)
+        }
+    }
+
+    private fun collectAndRemoveEffects(
+        shouldRemove: (RenderableEffect) -> Boolean
+    ): List<RenderableEffect> {
+        val seen = IdentityHashMap<RenderableEffect, Boolean>()
+        val collected = ArrayList<RenderableEffect>(effects.size + pendingAdd.size)
+
+        for (effect in effects) {
+            if (shouldRemove(effect) && seen.put(effect, true) == null) {
+                collected.add(effect)
+            }
+        }
+        for (effect in pendingAdd) {
+            if (shouldRemove(effect) && seen.put(effect, true) == null) {
+                collected.add(effect)
+            }
+        }
+
+        for (effect in collected) {
+            removeIdentity(effects, effect)
+            removeIdentity(pendingAdd, effect)
+            removeIdentity(pendingRemove, effect)
+            persistentEffects.remove(effect)
+        }
+        return collected
+    }
+
+    private fun removeIdentity(
+        collection: CopyOnWriteArrayList<RenderableEffect>,
+        effect: RenderableEffect
+    ): Boolean = collection.removeIf { it === effect }
+
+    private fun disposeSafely(effect: RenderableEffect) {
+        try {
+            effect.dispose()
+        } catch (ex: Exception) {
+            OrryxMod.logger.error("Error disposing effect ${effect.id}", ex)
+        }
+    }
+
+    private fun publishRemoved(effect: RenderableEffect) {
+        try {
+            EventBus.publish(Events.EffectRemoved(effect))
+        } catch (ex: Exception) {
+            OrryxMod.logger.error("Error publishing removal for effect ${effect.id}", ex)
+        }
     }
 
     /**

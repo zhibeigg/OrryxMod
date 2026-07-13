@@ -123,8 +123,8 @@ object NavigationState {
      * 检查超时
      */
     private fun checkTimeout(): Boolean {
-        if (config.timeout in 1..<elapsedTime) {
-            status = NavigationStatus.FAILED
+        if (config.timeout > 0 && elapsedTime >= config.timeout) {
+            failNavigation()
             return true
         }
         return false
@@ -140,10 +140,10 @@ object NavigationState {
 
         // Baritone 停止了，根据距离判断是成功还是失败
         val target = targetPos
-        status = if (target != null && distanceToTarget <= arrivalRange + ARRIVAL_TOLERANCE) {
-            NavigationStatus.ARRIVED
+        if (target != null && distanceToTarget <= arrivalRange + ARRIVAL_TOLERANCE) {
+            status = NavigationStatus.ARRIVED
         } else {
-            NavigationStatus.FAILED
+            failNavigation()
         }
         return true
     }
@@ -160,12 +160,25 @@ object NavigationState {
         return false
     }
 
+    private fun failNavigation() {
+        status = NavigationStatus.FAILED
+        try {
+            BaritoneUtils.cancelEverything()
+        } catch (ex: Exception) {
+            OrryxMod.logger.error("Failed to cancel Baritone after navigation failure", ex)
+        }
+    }
+
     /**
      * 停止导航
      * @param reason 停止原因
      */
     fun stopNavigation(reason: NavigationStatus = NavigationStatus.CANCELLED) {
-        status = reason
+        if (reason == NavigationStatus.FAILED) {
+            failNavigation()
+        } else {
+            status = reason
+        }
     }
 
     /**

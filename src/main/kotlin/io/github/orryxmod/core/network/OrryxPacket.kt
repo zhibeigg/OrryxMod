@@ -1,5 +1,6 @@
 package io.github.orryxmod.core.network
 
+import io.github.orryxmod.feature.collider.ColliderShape
 import java.util.UUID
 
 /**
@@ -15,7 +16,12 @@ sealed class OrryxPacket {
         val skill: String,
         val module: String,
         val scale: Double,
-        val maxDistance: Double
+        val maxDistance: Double,
+        val indicatorType: String = "texture",
+        val indicatorColor: Int = 0xFFFFFF,
+        val indicatorAlpha: Float = 0.8f,
+        val indicatorRadius: Double = 1.0,
+        val modelScale: Float = 1.0f
     ) : OrryxPacket() {
         override val packetId = 1
     }
@@ -157,5 +163,31 @@ sealed class OrryxPacket {
         val id: String
     ) : OrryxPacket() {
         override val packetId = 17
+    }
+
+    // ========== 碰撞箱系统 ==========
+
+    data class ColliderShow(
+        val id: String,
+        val r: Int,
+        val g: Int,
+        val b: Int,
+        val a: Int,
+        val shapeData: ColliderShape
+    ) : OrryxPacket() {
+        override val packetId = 18
+    }
+
+    data class ColliderUpdate(
+        val id: String,
+        val shapeData: ColliderShape
+    ) : OrryxPacket() {
+        override val packetId = 19
+    }
+
+    data class ColliderRemove(
+        val id: String
+    ) : OrryxPacket() {
+        override val packetId = 20
     }
 }

@@ -16,14 +16,26 @@ class FeatureRegistryTest {
 
     @Feature(id = "test-a", description = "Feature A")
     class FeatureA : FeatureBase() {
-        var enableCalled = false
-        var disableCalled = false
+        var enableCalls = 0
+        var disableCalls = 0
+        var onEnableCalls = 0
+        var onDisableCalls = 0
+
+        override fun enable() {
+            enableCalls++
+            super.enable()
+        }
+
+        override fun disable() {
+            disableCalls++
+            super.disable()
+        }
 
         @OnEnable
-        fun onEnable() { enableCalled = true }
+        fun onEnable() { onEnableCalls++ }
 
         @OnDisable
-        fun onDisable() { disableCalled = true }
+        fun onDisable() { onDisableCalls++ }
     }
 
     @Feature(id = "test-b", description = "Feature B")
@@ -65,6 +77,42 @@ class FeatureRegistryTest {
     }
 
     @Test
+    fun `features start disabled`() {
+        assertFalse(FeatureA().enabled)
+    }
+
+    @Test
+    fun `enable and disable are idempotent across overloads`() {
+        val feature = FeatureA()
+        var enabledEvents = 0
+        var disabledEvents = 0
+        EventBus.subscribe<io.github.orryxmod.core.event.Events.FeatureEnabled> { enabledEvents++ }
+        EventBus.subscribe<io.github.orryxmod.core.event.Events.FeatureDisabled> { disabledEvents++ }
+        FeatureRegistry.register(feature)
+
+        assertTrue(FeatureRegistry.enable("test-a"))
+        assertFalse(FeatureRegistry.enable(feature))
+        assertTrue(feature.enabled)
+        assertEquals(1, feature.enableCalls)
+        assertEquals(1, feature.onEnableCalls)
+        assertEquals(1, enabledEvents)
+
+        assertTrue(FeatureRegistry.disable(feature))
+        assertFalse(FeatureRegistry.disable("test-a"))
+        assertFalse(feature.enabled)
+        assertEquals(1, feature.disableCalls)
+        assertEquals(1, feature.onDisableCalls)
+        assertEquals(1, disabledEvents)
+    }
+
+    @Test
+    fun `unregistered feature cannot be enabled or disabled`() {
+        val feature = FeatureA()
+        assertFalse(FeatureRegistry.enable(feature))
+        assertFalse(FeatureRegistry.disable(feature))
+    }
+
+    @Test
     fun `getAll returns all registered features`() {
         FeatureRegistry.register(FeatureA())
         FeatureRegistry.register(FeatureB())
@@ -93,7 +141,7 @@ class FeatureRegistryTest {
         FeatureRegistry.enableAll()
 
         assertTrue(feature.enabled)
-        assertTrue(feature.enableCalled)
+        assertEquals(1, feature.onEnableCalls)
     }
 
     @Test
@@ -104,7 +152,7 @@ class FeatureRegistryTest {
         FeatureRegistry.disableAll()
 
         assertFalse(feature.enabled)
-        assertTrue(feature.disableCalled)
+        assertEquals(1, feature.onDisableCalls)
     }
 
     @Test

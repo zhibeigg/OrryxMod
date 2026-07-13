@@ -1,5 +1,7 @@
 package io.github.orryxmod.core.network
 
+import io.github.orryxmod.feature.collider.ColliderShape
+import io.github.orryxmod.feature.collider.ColliderType
 import org.junit.jupiter.api.Assertions.*
 import org.junit.jupiter.api.Test
 
@@ -23,11 +25,29 @@ class OrryxPacketTest {
             OrryxPacket.SectorShockwave(0.0, 0.0, 0.0, 5.0, 90.0, 0.0),
             OrryxPacket.BloomConfigSync(emptyMap()),
             OrryxPacket.BloomConfigUpdate("id", io.github.orryxmod.feature.bloom.BloomConfig("n", intArrayOf(0,0,0,0), 1f, 1f, 0)),
-            OrryxPacket.BloomConfigRemove("id")
+            OrryxPacket.BloomConfigRemove("id"),
+            OrryxPacket.ColliderShow("show", 255, 255, 255, 255, ColliderShape.Sphere(0.0, 0.0, 0.0, 1.0)),
+            OrryxPacket.ColliderUpdate("update", ColliderShape.Sphere(0.0, 0.0, 0.0, 1.0)),
+            OrryxPacket.ColliderRemove("remove")
         )
 
         val ids = packets.map { it.packetId }
         assertEquals(ids.size, ids.toSet().size, "Duplicate packetIds found: ${ids.groupBy { it }.filter { it.value.size > 1 }.keys}")
+    }
+
+    @Test
+    fun `Collider wire IDs are unique and stable`() {
+        val types = ColliderType.values().toList()
+        val wireIds = types.map { it.wireId }
+
+        assertEquals(wireIds.size, wireIds.toSet().size)
+        assertSame(ColliderType.SPHERE, ColliderType.fromWireId(0))
+        assertSame(ColliderType.AABB, ColliderType.fromWireId(1))
+        assertSame(ColliderType.OBB, ColliderType.fromWireId(2))
+        assertSame(ColliderType.CAPSULE, ColliderType.fromWireId(3))
+        assertSame(ColliderType.RAY, ColliderType.fromWireId(4))
+        assertSame(ColliderType.COMPOSITE, ColliderType.fromWireId(5))
+        assertNull(ColliderType.fromWireId(6))
     }
 
     @Test

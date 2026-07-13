@@ -1,5 +1,6 @@
 package io.github.orryxmod.feature.bloom
 
+import io.github.orryxmod.OrryxMod
 import net.minecraft.client.renderer.OpenGlHelper
 import net.minecraft.client.shader.Framebuffer
 import net.minecraftforge.fml.relauncher.Side
@@ -82,15 +83,16 @@ object ShaderManager {
     }
 
     fun allowedShader(): Boolean {
-        // 如果 OptiFine 光影启用，禁用我们的泛光效果
+        // 如果 OptiFine 光影启用、硬件不支持或初始化失败，禁用我们的泛光效果。
         if (isOptifineShaderActive()) return false
-        return OpenGlHelper.shadersSupported
+        return OpenGlHelper.shadersSupported && initialized
     }
 
-    fun init() {
-        if (initialized || !OpenGlHelper.shadersSupported) return
+    fun init(): Boolean {
+        if (initialized) return true
+        if (!OpenGlHelper.shadersSupported) return false
 
-        try {
+        return try {
             // 加载着色器
             IMAGE_V = loadShader(GL20.GL_VERTEX_SHADER, "image.vert")
             IMAGE_F = loadShader(GL20.GL_FRAGMENT_SHADER, "image.frag")
@@ -108,23 +110,32 @@ object ShaderManager {
             PROGRAM_MASK = createProgram(MASK_V, MASK_F)
 
             initialized = true
-        } catch (e: Exception) {
-            e.printStackTrace()
+            true
+        } catch (ex: Exception) {
+            OrryxMod.logger.error("[Bloom] Failed to initialize shaders", ex)
+            cleanup()
+            false
         }
     }
 
     private fun loadShader(type: Int, filename: String): Int {
         val source = readShaderSource("/assets/orryxmod/shaders/$filename")
         val shader = GL20.glCreateShader(type)
-        GL20.glShaderSource(shader, source)
-        GL20.glCompileShader(shader)
 
-        if (GL20.glGetShaderi(shader, GL20.GL_COMPILE_STATUS) == GL11.GL_FALSE) {
-            val log = GL20.glGetShaderInfoLog(shader, 1024)
-            throw RuntimeException("Shader compile error ($filename): $log")
+        return try {
+            GL20.glShaderSource(shader, source)
+            GL20.glCompileShader(shader)
+
+            if (GL20.glGetShaderi(shader, GL20.GL_COMPILE_STATUS) == GL11.GL_FALSE) {
+                val log = GL20.glGetShaderInfoLog(shader, 1024)
+                throw RuntimeException("Shader compile error ($filename): $log")
+            }
+
+            shader
+        } catch (ex: Exception) {
+            if (shader != 0) GL20.glDeleteShader(shader)
+            throw ex
         }
-
-        return shader
     }
 
     private fun readShaderSource(path: String): String {
@@ -138,20 +149,25 @@ object ShaderManager {
 
     private fun createProgram(vertexShader: Int, fragmentShader: Int): Int {
         val program = GL20.glCreateProgram()
-        GL20.glAttachShader(program, vertexShader)
-        GL20.glAttachShader(program, fragmentShader)
 
-        // 绑定属性位置
-        GL20.glBindAttribLocation(program, 0, "position")
+        return try {
+            GL20.glAttachShader(program, vertexShader)
+            GL20.glAttachShader(program, fragmentShader)
 
-        GL20.glLinkProgram(program)
+            // 绑定属性位置
+            GL20.glBindAttribLocation(program, 0, "position")
+            GL20.glLinkProgram(program)
 
-        if (GL20.glGetProgrami(program, GL20.GL_LINK_STATUS) == GL11.GL_FALSE) {
-            val log = GL20.glGetProgramInfoLog(program, 1024)
-            throw RuntimeException("Program link error: $log")
+            if (GL20.glGetProgrami(program, GL20.GL_LINK_STATUS) == GL11.GL_FALSE) {
+                val log = GL20.glGetProgramInfoLog(program, 1024)
+                throw RuntimeException("Program link error: $log")
+            }
+
+            program
+        } catch (ex: Exception) {
+            if (program != 0) GL20.glDeleteProgram(program)
+            throw ex
         }
-
-        return program
     }
 
     fun useProgram(program: Int) {
@@ -244,8 +260,6 @@ object ShaderManager {
     }
 
     fun cleanup() {
-        if (!initialized) return
-
         if (PROGRAM_IMAGE != 0) GL20.glDeleteProgram(PROGRAM_IMAGE)
         if (PROGRAM_BLUR != 0) GL20.glDeleteProgram(PROGRAM_BLUR)
         if (PROGRAM_BLOOM_COMBINE != 0) GL20.glDeleteProgram(PROGRAM_BLOOM_COMBINE)
@@ -259,6 +273,19 @@ object ShaderManager {
         if (COLOR_TINT != 0) GL20.glDeleteShader(COLOR_TINT)
         if (MASK_V != 0) GL20.glDeleteShader(MASK_V)
         if (MASK_F != 0) GL20.glDeleteShader(MASK_F)
+
+        PROGRAM_IMAGE = 0
+        PROGRAM_BLUR = 0
+        PROGRAM_BLOOM_COMBINE = 0
+        PROGRAM_COLOR_TINT = 0
+        PROGRAM_MASK = 0
+        IMAGE_V = 0
+        IMAGE_F = 0
+        BLUR = 0
+        BLOOM_COMBINE = 0
+        COLOR_TINT = 0
+        MASK_V = 0
+        MASK_F = 0
 
         programs.clear()
         uniformLocations.clear()

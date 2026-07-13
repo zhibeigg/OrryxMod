@@ -12,10 +12,6 @@ import io.github.orryxmod.core.registry.FeatureScanner
 import io.github.orryxmod.feature.fractureblock.FractureBlock
 import io.github.orryxmod.feature.fractureblock.FractureBlockTileEntity
 import io.github.orryxmod.feature.fractureblock.RenderFractureBlock
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.cancel
 import net.minecraft.util.ResourceLocation
 import net.minecraftforge.common.MinecraftForge
 import net.minecraftforge.fml.client.registry.ClientRegistry
@@ -35,19 +31,9 @@ class OrryxMod {
     companion object {
         const val MOD_ID = "orryxmod"
         const val MOD_NAME = "OrryxMod Client"
-        const val MOD_VERSION = "1.2.3"
+        const val MOD_VERSION = "1.4.4"
 
         lateinit var network: FMLEventChannel
-
-        @Volatile
-        internal var scope = CoroutineScope(Dispatchers.Default + SupervisorJob())
-            private set
-
-        /** 取消当前 scope 并重建，用于断开连接时清理旧协程 */
-        internal fun resetScope() {
-            scope.cancel()
-            scope = CoroutineScope(Dispatchers.Default + SupervisorJob())
-        }
 
         val logger: Logger = LogManager.getLogger("OrryxMod")
         lateinit var fractureBlock: FractureBlock

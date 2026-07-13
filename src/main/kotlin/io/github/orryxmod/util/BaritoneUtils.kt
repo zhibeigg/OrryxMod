@@ -1,12 +1,13 @@
 package io.github.orryxmod.util
 
 import baritone.api.BaritoneAPI
-import io.github.orryxmod.OrryxMod.Companion.scope
-import kotlinx.coroutines.launch
+import io.github.orryxmod.OrryxMod
 import java.awt.Color
 
 object BaritoneUtils {
+    @Volatile
     var initialized = false
+        private set
 
     private val provider
         get() = if (initialized) BaritoneAPI.getProvider() else null
@@ -21,17 +22,19 @@ object BaritoneUtils {
         get() = primary?.pathingBehavior?.isPathing ?: false
 
     val isActive
-        get() = (primary?.customGoalProcess?.isActive ?: false) || (primary?.pathingControlManager?.mostRecentInControl()?.orElse(null)?.isActive ?: false)
+        get() = (primary?.customGoalProcess?.isActive ?: false) ||
+            (primary?.pathingControlManager?.mostRecentInControl()?.orElse(null)?.isActive ?: false)
 
-    fun cancelEverything() = primary?.pathingBehavior?.cancelEverything()
+    fun cancelEverything() {
+        primary?.pathingBehavior?.cancelEverything()
+    }
 
+    @Synchronized
     fun initialize() {
-        initialized = true
-        println("initialized BaritoneUtils")
+        if (initialized) return
 
-        scope.launch {
-            settings?.apply {
-                println("settings load BaritoneUtils")
+        try {
+            BaritoneAPI.getSettings().apply {
                 chatControl.value = false
                 chatControlAnyway.value = false
                 prefixControl.value = false
@@ -82,8 +85,8 @@ object BaritoneUtils {
                 chunkCaching.value = true
                 blockReachDistance.value = 1.0f
                 enterPortal.value = false
-                blockPlacementPenalty.value = 20.toDouble()
-                jumpPenalty.value = 0.toDouble()
+                blockPlacementPenalty.value = 20.0
+                jumpPenalty.value = 0.0
                 assumeWalkOnWater.value = false
                 assumeStep.value = false
                 assumeExternalAutoTool.value = false
@@ -92,15 +95,20 @@ object BaritoneUtils {
                 allowJumpAt256.value = true
                 allowDiagonalDescend.value = true
                 allowDiagonalAscend.value = true
-                failureTimeoutMS.value = 3 * 1000L
+                failureTimeoutMS.value = 3_000L
                 avoidance.value = true
                 mobAvoidanceRadius.value = 1
-                mobAvoidanceCoefficient.value = 1.toDouble()
+                mobAvoidanceCoefficient.value = 1.0
                 mobSpawnerAvoidanceRadius.value = 0
-                mobSpawnerAvoidanceCoefficient.value = 1.toDouble()
-                // 到达地点后断开服务器连接
+                mobSpawnerAvoidanceCoefficient.value = 1.0
                 disconnectOnArrival.value = false
             }
+
+            initialized = true
+            OrryxMod.logger.info("Baritone settings initialized")
+        } catch (ex: Exception) {
+            OrryxMod.logger.error("Failed to initialize Baritone settings", ex)
+            throw ex
         }
     }
 }

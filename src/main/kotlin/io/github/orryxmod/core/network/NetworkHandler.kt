@@ -1,6 +1,5 @@
 package io.github.orryxmod.core.network
 
-import com.google.common.io.ByteStreams
 import io.github.orryxmod.OrryxMod
 import io.github.orryxmod.util.MC
 import net.minecraftforge.fml.common.eventhandler.SubscribeEvent
@@ -29,8 +28,7 @@ object NetworkHandler {
             val bytes = ByteArray(buffer.readableBytes())
             buffer.readBytes(bytes)
 
-            val input = ByteStreams.newDataInput(bytes)
-            val packet = PacketCodec.decode(input)
+            val packet = PacketCodec.decode(bytes)
             if (packet == null) {
                 OrryxMod.logger.warn("[Network] Failed to decode packet")
                 return

@@ -13,9 +13,11 @@ object BloomConfigManager {
      * 为实体查找匹配的配置（按优先级排序后取最高优先级）
      */
     fun findConfig(entityName: String): BloomConfig? {
+        if (entityName.isBlank()) return null
+
         // 创建快照进行遍历，避免并发修改
         return configs.values.toList()
-            .filter { entityName.contains(it.name, ignoreCase = true) }
+            .filter { it.name.isNotBlank() && entityName.contains(it.name, ignoreCase = true) }
             .maxByOrNull { it.priority }
     }
 
@@ -24,13 +26,18 @@ object BloomConfigManager {
      */
     fun syncAll(newConfigs: Map<String, BloomConfig>) {
         configs.clear()
-        configs.putAll(newConfigs)
+        newConfigs.forEach { (id, config) ->
+            if (id.isNotBlank() && config.name.isNotBlank()) {
+                configs[id] = config
+            }
+        }
     }
 
     /**
      * 更新单个配置
      */
     fun update(id: String, config: BloomConfig) {
+        if (id.isBlank() || config.name.isBlank()) return
         configs[id] = config
     }
 

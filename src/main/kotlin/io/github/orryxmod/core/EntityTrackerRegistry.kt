@@ -2,42 +2,75 @@ package io.github.orryxmod.core
 
 import net.minecraft.entity.player.EntityPlayer
 import java.lang.ref.WeakReference
+import java.util.ArrayDeque
 
 object EntityTrackerRegistry {
 
-    private val trackerEntries by lazy { mutableListOf<Entry>() }
+    private val trackerEntries = mutableListOf<Entry>()
 
     fun tick() {
-        trackerEntries.removeIf {
-            !it.update()
+        val iterator = trackerEntries.iterator()
+        while (iterator.hasNext()) {
+            if (!iterator.next().update()) {
+                iterator.remove()
+            }
         }
     }
 
     fun getOrCreateEntry(living: EntityPlayer, maxTrack: Int): Entry {
-        return trackerEntries.firstOrNull { it.entityToTrack === living } ?: Entry(living, maxTrack).also { trackerEntries.add(it) }
+        val existing = trackerEntries.firstOrNull { it.isTracking(living) }
+        if (existing != null) {
+            existing.resize(maxTrack)
+            return existing
+        }
+
+        return Entry(living, maxTrack).also { trackerEntries.add(it) }
     }
 
-    class Entry(val entityToTrack: EntityPlayer, private var maxTrack: Int = 20) {
+    fun clear() {
+        trackerEntries.clear()
+    }
 
-        var trackedInfo = mutableListOf<EntityInfo>()
+    class Entry(entityToTrack: EntityPlayer, maxTrack: Int = 20) {
+        private val trackedEntity = WeakReference(entityToTrack)
+        private val snapshots = ArrayDeque<EntityInfo>()
+        private var capacity = maxTrack.coerceAtLeast(1)
+
+        val entityToTrack: EntityPlayer?
+            get() = trackedEntity.get()
+
+        /**
+         * 保持旧版 Ghost 读取接口兼容，返回按时间从旧到新排列的快照。
+         */
+        val trackedInfo: List<EntityInfo>
+            get() = snapshots.toList()
+
+        internal fun isTracking(entity: EntityPlayer): Boolean = trackedEntity.get() === entity
+
+        internal fun resize(maxTrack: Int) {
+            capacity = maxTrack.coerceAtLeast(1)
+            trimToCapacity()
+        }
 
         fun update(): Boolean {
-            if (entityToTrack.isDead) return false
+            val entity = trackedEntity.get() ?: return false
+            if (entity.isDead) return false
 
-            val info = EntityInfo(entityToTrack)
-
-            trackedInfo.add(info)
-
-            while (trackedInfo.size > maxTrack) {
-                trackedInfo.removeFirst()
-            }
-
+            snapshots.addLast(EntityInfo(entity))
+            trimToCapacity()
             return true
+        }
+
+        private fun trimToCapacity() {
+            while (snapshots.size > capacity) {
+                snapshots.removeFirst()
+            }
         }
     }
 
     class EntityInfo(entity: EntityPlayer) {
         private val trackedRef = WeakReference(entity)
+
         /** 获取被追踪的实体（可能已被 GC 回收） */
         val tracked: EntityPlayer? get() = trackedRef.get()
 
@@ -51,7 +84,11 @@ object EntityTrackerRegistry {
 
         var renderYawOffset: Float = entity.renderYawOffset
         var rotationYawHead: Float = entity.rotationYawHead
-        var rotationPitch: Float = if (entity.ticksElytraFlying > 4) Math.toDegrees(-(Math.PI.toFloat() / 4f).toDouble()).toFloat() else entity.rotationPitch
+        var rotationPitch: Float = if (entity.ticksElytraFlying > 4) {
+            Math.toDegrees(-(Math.PI.toFloat() / 4f).toDouble()).toFloat()
+        } else {
+            entity.rotationPitch
+        }
 
         var limbSwing: Float = entity.limbSwing
         var limbSwingAmount: Float = entity.limbSwingAmount

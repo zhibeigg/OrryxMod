@@ -1,12 +1,12 @@
 // 独立测试构建脚本 - 不依赖 ForgeGradle/Minecraft
-// 用法: gradle -b build-test.gradle test
+// 用法: Gradle 8.9 --no-build-cache -b build-test.gradle test
 
 plugins {
     id 'org.jetbrains.kotlin.jvm' version '1.9.0'
 }
 
 group = 'io.github.orryxmod'
-version = '1.0.0'
+version = '1.4.4'
 
 repositories {
     mavenCentral()
@@ -42,6 +42,7 @@ sourceSets {
             include 'io/github/orryxmod/feature/shockwave/ShockwaveDsl.kt'
             include 'io/github/orryxmod/feature/bloom/BloomConfig.kt'
             include 'io/github/orryxmod/feature/bloom/BloomConfigManager.kt'
+            include 'io/github/orryxmod/feature/collider/ColliderType.kt'
             // Stubs - 使用 _stub 后缀避免与主代码冲突
             include 'stubs/**'
         }
@@ -54,7 +55,6 @@ sourceSets {
 dependencies {
     implementation 'org.jetbrains.kotlin:kotlin-stdlib-jdk8:1.9.0'
     implementation 'org.jetbrains.kotlin:kotlin-reflect:1.9.0'
-    implementation 'org.jetbrains.kotlinx:kotlinx-coroutines-core:1.7.2'
     implementation 'org.joml:joml:1.10.7'
     implementation 'com.google.guava:guava:31.1-jre'
     implementation 'org.apache.logging.log4j:log4j-api:2.17.2'
@@ -64,7 +64,6 @@ dependencies {
     testImplementation 'org.junit.jupiter:junit-jupiter:5.10.2'
     testImplementation 'io.mockk:mockk:1.13.10'
     testImplementation 'org.jetbrains.kotlin:kotlin-test-junit5:1.9.0'
-    testImplementation 'org.jetbrains.kotlinx:kotlinx-coroutines-test:1.7.2'
 }
 
 tasks.named('test') {

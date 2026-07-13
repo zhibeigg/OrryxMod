@@ -66,33 +66,82 @@ object FeatureRegistry {
     fun getAll(): Collection<FeatureBase> = features.values
 
     /**
+     * 按 ID 启用功能模块。
+     * @return 仅当模块从禁用状态切换到启用状态时返回 true
+     */
+    fun enable(id: String): Boolean = features[id]?.let(::enable) ?: false
+
+    /**
+     * 启用功能模块，重复调用不会重复触发生命周期或注册监听器。
+     */
+    @Synchronized
+    fun enable(feature: FeatureBase): Boolean {
+        if (!isRegistered(feature) || feature.enabled) return false
+
+        return try {
+            feature.enable()
+            if (!feature.enabled) {
+                OrryxMod.logger.warn("Feature '${feature.metadata.id}' did not enter enabled state")
+                false
+            } else if (!invokeLifecycleMethods(feature, OnEnable::class)) {
+                rollbackEnable(feature)
+                false
+            } else {
+                publishLifecycleEvent(Events.FeatureEnabled(feature), "enabled", feature)
+                true
+            }
+        } catch (ex: Exception) {
+            OrryxMod.logger.error("Error enabling feature ${feature.metadata.id}", ex)
+            try {
+                feature.disable()
+            } catch (cleanupEx: Exception) {
+                OrryxMod.logger.error("Error rolling back feature ${feature.metadata.id}", cleanupEx)
+            }
+            false
+        }
+    }
+
+    /**
+     * 按 ID 禁用功能模块。
+     * @return 仅当模块从启用状态切换到禁用状态时返回 true
+     */
+    fun disable(id: String): Boolean = features[id]?.let(::disable) ?: false
+
+    /**
+     * 禁用功能模块，重复调用不会重复触发生命周期或资源清理。
+     */
+    @Synchronized
+    fun disable(feature: FeatureBase): Boolean {
+        if (!isRegistered(feature) || !feature.enabled) return false
+
+        invokeLifecycleMethods(feature, OnDisable::class)
+        return try {
+            feature.disable()
+            if (feature.enabled) {
+                OrryxMod.logger.warn("Feature '${feature.metadata.id}' did not enter disabled state")
+                false
+            } else {
+                publishLifecycleEvent(Events.FeatureDisabled(feature), "disabled", feature)
+                true
+            }
+        } catch (ex: Exception) {
+            OrryxMod.logger.error("Error disabling feature ${feature.metadata.id}", ex)
+            false
+        }
+    }
+
+    /**
      * 启用所有功能模块
      */
     fun enableAll() {
-        features.values.forEach { feature ->
-            try {
-                feature.enable()
-                invokeLifecycleMethods(feature, OnEnable::class)
-                EventBus.publish(Events.FeatureEnabled(feature))
-            } catch (ex: Exception) {
-                OrryxMod.logger.error("Error enabling feature ${feature.metadata.id}", ex)
-            }
-        }
+        features.values.forEach(::enable)
     }
 
     /**
      * 禁用所有功能模块
      */
     fun disableAll() {
-        features.values.forEach { feature ->
-            try {
-                invokeLifecycleMethods(feature, OnDisable::class)
-                feature.disable()
-                EventBus.publish(Events.FeatureDisabled(feature))
-            } catch (ex: Exception) {
-                OrryxMod.logger.error("Error disabling feature ${feature.metadata.id}", ex)
-            }
-        }
+        features.values.forEach(::disable)
     }
 
     /**
@@ -100,6 +149,7 @@ object FeatureRegistry {
      */
     fun notifyDisconnect() {
         features.values.forEach { feature ->
+            if (!feature.enabled) return@forEach
             try {
                 invokeLifecycleMethods(feature, OnDisconnect::class)
             } catch (ex: Exception) {
@@ -112,12 +162,38 @@ object FeatureRegistry {
      * 清除所有功能模块
      */
     fun clear() {
+        disableAll()
         features.clear()
         featuresByClass.clear()
         // 同步清理 EventBus 和 PacketDispatcher 中的 handler，
         // 防止 Feature 重新注册时旧 handler 仍然存在导致重复执行
         EventBus.clear()
         PacketDispatcher.clear()
+    }
+
+    private fun isRegistered(feature: FeatureBase): Boolean {
+        val registered = features[feature.metadata.id]
+        if (registered === feature) return true
+
+        OrryxMod.logger.warn("Feature '${feature.metadata.id}' is not registered in this registry")
+        return false
+    }
+
+    private fun rollbackEnable(feature: FeatureBase) {
+        invokeLifecycleMethods(feature, OnDisable::class)
+        try {
+            feature.disable()
+        } catch (ex: Exception) {
+            OrryxMod.logger.error("Error rolling back feature ${feature.metadata.id}", ex)
+        }
+    }
+
+    private fun publishLifecycleEvent(event: Event, action: String, feature: FeatureBase) {
+        try {
+            EventBus.publish(event)
+        } catch (ex: Exception) {
+            OrryxMod.logger.error("Error publishing feature $action event for ${feature.metadata.id}", ex)
+        }
     }
 
     /**
@@ -167,16 +243,22 @@ object FeatureRegistry {
     /**
      * 调用生命周期方法
      */
-    private fun invokeLifecycleMethods(feature: FeatureBase, annotationType: KClass<out Annotation>) {
+    private fun invokeLifecycleMethods(
+        feature: FeatureBase,
+        annotationType: KClass<out Annotation>
+    ): Boolean {
+        var successful = true
         feature::class.functions
             .filter { it.findAnnotation(annotationType) != null }
             .forEach { func ->
                 try {
                     func.call(feature)
                 } catch (ex: Exception) {
+                    successful = false
                     OrryxMod.logger.error("Error invoking lifecycle method ${func.name}", ex)
                 }
             }
+        return successful
     }
 
     /**

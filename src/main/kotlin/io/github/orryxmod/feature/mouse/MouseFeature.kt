@@ -22,6 +22,12 @@ object MouseFeature : FeatureBase() {
 
     private var _isVisible = false
 
+    override fun disable() {
+        if (!enabled) return
+        hideCursor()
+        super.disable()
+    }
+
     // ========== 网络包处理 ==========
 
     @OnPacket(OrryxPacket.MouseControl::class)
@@ -47,9 +53,14 @@ object MouseFeature : FeatureBase() {
      * 打开透传覆盖层，模拟聊天栏行为
      */
     fun showCursor() {
+        if (!enabled) return
+        if (!TransparentOverlay.show()) {
+            _isVisible = false
+            return
+        }
+
         _isVisible = true
         Mouse.setGrabbed(false)
-        TransparentOverlay.show()
     }
 
     /**
@@ -81,6 +92,10 @@ object MouseFeature : FeatureBase() {
      * Mixin 通过此方法判断是否阻止视角控制
      */
     fun isVisible(): Boolean = _isVisible
+
+    internal fun onOverlayClosed() {
+        _isVisible = false
+    }
 
     // ========== 生命周期 ==========
 

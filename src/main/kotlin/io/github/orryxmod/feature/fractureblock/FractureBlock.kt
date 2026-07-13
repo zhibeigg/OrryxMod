@@ -31,11 +31,11 @@ class FractureBlock : BlockContainer(FractureMaterial()) {
     init {
         registryName = ResourceLocation(OrryxMod.MOD_ID, "FractureBlock")
         translucent = true
-        defaultState = FractureBlockState(this) as IBlockState
+        defaultState = FractureBlockState(this)
     }
 
-    fun copyState(pos: BlockPos, state: IBlockState) {
-        blockNodes.putIfAbsent(pos, BlockNode(state))
+    fun registerNode(pos: BlockPos, node: BlockNode) {
+        blockNodes[pos] = node
     }
 
     // ==================== 通用代理方法 ====================
@@ -45,8 +45,8 @@ class FractureBlock : BlockContainer(FractureMaterial()) {
      */
     private inline fun <T> delegateOrDefault(pos: BlockPos, default: T, delegate: (BlockNode) -> T): T {
         return blockNodes[pos]?.let { node ->
-            runCatching { delegate(node) }.getOrElse {
-                it.printStackTrace()
+            runCatching { delegate(node) }.getOrElse { ex ->
+                OrryxMod.logger.error("[FractureBlock] Failed to delegate block call at $pos", ex)
                 default
             }
         } ?: default
@@ -57,8 +57,8 @@ class FractureBlock : BlockContainer(FractureMaterial()) {
      */
     private inline fun <T> delegateOrElse(pos: BlockPos, default: () -> T, delegate: (BlockNode) -> T): T {
         return blockNodes[pos]?.let { node ->
-            runCatching { delegate(node) }.getOrElse {
-                it.printStackTrace()
+            runCatching { delegate(node) }.getOrElse { ex ->
+                OrryxMod.logger.error("[FractureBlock] Failed to delegate block call at $pos", ex)
                 default()
             }
         } ?: default()
@@ -77,21 +77,21 @@ class FractureBlock : BlockContainer(FractureMaterial()) {
     override fun onEntityWalk(worldIn: World, pos: BlockPos, entityIn: Entity) {
         blockNodes[pos]?.let { node ->
             runCatching { node.originalBlock.onEntityWalk(worldIn, pos, entityIn) }
-                .onFailure { it.printStackTrace() }
+                .onFailure { ex -> OrryxMod.logger.error("[FractureBlock] onEntityWalk failed at $pos", ex) }
         }
     }
 
     override fun onBlockAdded(worldIn: World, pos: BlockPos, state: IBlockState) {
         blockNodes[pos]?.let { node ->
             runCatching { node.originalBlock.onBlockAdded(worldIn, pos, state) }
-                .onFailure { it.printStackTrace() }
+                .onFailure { ex -> OrryxMod.logger.error("[FractureBlock] onBlockAdded failed at $pos", ex) }
         }
     }
 
     override fun onNeighborChange(w: IBlockAccess, pos: BlockPos, p: BlockPos) {
         blockNodes[pos]?.let { node ->
             runCatching { node.originalBlock.onNeighborChange(w, pos, p) }
-                .onFailure { it.printStackTrace() }
+                .onFailure { ex -> OrryxMod.logger.error("[FractureBlock] onNeighborChange failed at $pos", ex) }
         }
     }
 
@@ -244,6 +244,6 @@ class FractureBlock : BlockContainer(FractureMaterial()) {
 
     // ==================== TileEntity ====================
 
-    override fun createNewTileEntity(worldIn: World, meta: Int): TileEntity? =
-        FractureBlockTileEntity(defaultState as FractureBlockState)
+    override fun createNewTileEntity(worldIn: World, meta: Int): TileEntity =
+        FractureBlockTileEntity()
 }

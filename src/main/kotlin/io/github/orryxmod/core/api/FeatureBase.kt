@@ -19,7 +19,7 @@ abstract class FeatureBase {
     /**
      * 功能是否启用
      */
-    var enabled: Boolean = true
+    var enabled: Boolean = false
         protected set
 
     /**

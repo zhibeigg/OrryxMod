@@ -1,8 +1,8 @@
 package io.github.orryxmod.feature.effect
 
+import io.github.orryxmod.core.render.RenderUtils
 import io.github.orryxmod.util.MC
 import net.minecraft.client.renderer.GlStateManager
-import net.minecraft.client.renderer.OpenGlHelper
 import net.minecraft.client.renderer.RenderHelper
 import net.minecraft.entity.EntityLivingBase
 import net.minecraftforge.client.event.RenderWorldLastEvent
@@ -180,83 +180,62 @@ class EntityShowEffect(
         // 如果透明度为0，跳过渲染
         if (alpha <= 0.001f) return
 
-        // 启用混合模式以支持透明度
         val needsBlend = alpha < 1.0f
-        if (needsBlend) {
-            GlStateManager.enableBlend()
-            GlStateManager.blendFunc(GL11.GL_SRC_ALPHA, GL11.GL_ONE_MINUS_SRC_ALPHA)
-        }
-
-        GlStateManager.enableColorMaterial()
-        GlStateManager.pushMatrix()
+        val originalYawOffset = ent.renderYawOffset
+        val originalYaw = ent.rotationYaw
+        val originalPitch = ent.rotationPitch
+        val originalPrevYawHead = ent.prevRotationYawHead
+        val originalYawHead = ent.rotationYawHead
+        val originalPlayerViewY = renderManager.playerViewY
+        val originalRenderShadow = renderManager.isRenderShadow
 
         try {
-            // 计算渲染位置
-            val shiftX = shadow.track.x - renderManager.viewerPosX
-            val shiftY = shadow.track.y - renderManager.viewerPosY
-            val shiftZ = shadow.track.z - renderManager.viewerPosZ
+            RenderUtils.withGlState(
+                blend = needsBlend,
+                depth = true,
+                lighting = GL11.glIsEnabled(GL11.GL_LIGHTING),
+                texture = true
+            ) {
+                GlStateManager.enableColorMaterial()
 
-            GlStateManager.translate(shiftX, shiftY, shiftZ)
+                val shiftX = shadow.track.x - renderManager.viewerPosX
+                val shiftY = shadow.track.y - renderManager.viewerPosY
+                val shiftZ = shadow.track.z - renderManager.viewerPosZ
+                GlStateManager.translate(shiftX, shiftY, shiftZ)
 
-            // 缩放
-            val scale = shadow.scale
-            GlStateManager.scale(scale, scale, scale)
+                val scale = shadow.scale
+                GlStateManager.scale(scale, scale, scale)
 
-            // 计算实体缩放
-            val aabb = ent.renderBoundingBox
-            val entityScale = calculateEntityScale(aabb)
-            GlStateManager.scale(entityScale, entityScale, entityScale)
+                val entityScale = calculateEntityScale(ent.renderBoundingBox)
+                GlStateManager.scale(entityScale, entityScale, entityScale)
 
-            // 保存原始旋转值
-            val originalYawOffset = ent.renderYawOffset
-            val originalYaw = ent.rotationYaw
-            val originalPitch = ent.rotationPitch
-            val originalPrevYawHead = ent.prevRotationYawHead
-            val originalYawHead = ent.rotationYawHead
+                GlStateManager.rotate(135.0f, 0.0f, 1.0f, 0.0f)
+                RenderHelper.enableStandardItemLighting()
+                GlStateManager.rotate(-135.0f, 0.0f, 1.0f, 0.0f)
+                GlStateManager.rotate(shadow.rotateX, shadow.track.vectorX.x, shadow.track.vectorX.y, shadow.track.vectorX.z)
+                GlStateManager.rotate(shadow.rotateY, 0.0f, 1.0f, 0.0f)
+                GlStateManager.rotate(shadow.rotateZ, shadow.track.vectorZ.x, shadow.track.vectorZ.y, shadow.track.vectorZ.z)
 
-            // 设置旋转
-            GlStateManager.rotate(135.0f, 0.0f, 1.0f, 0.0f)
-            RenderHelper.enableStandardItemLighting()
-            GlStateManager.rotate(-135.0f, 0.0f, 1.0f, 0.0f)
-            GlStateManager.rotate(shadow.rotateX, shadow.track.vectorX.x, shadow.track.vectorX.y, shadow.track.vectorX.z)
-            GlStateManager.rotate(shadow.rotateY, 0.0f, 1.0f, 0.0f)
-            GlStateManager.rotate(shadow.rotateZ, shadow.track.vectorZ.x, shadow.track.vectorZ.y, shadow.track.vectorZ.z)
+                ent.renderYawOffset = shadow.track.renderYawOffset
+                ent.rotationYaw = shadow.track.rotationYaw
+                ent.rotationPitch = shadow.track.rotationPitch
+                ent.rotationYawHead = shadow.track.rotationYawHead
+                ent.prevRotationYawHead = shadow.track.prevRotationYawHead
 
-            // 应用跟踪的旋转
-            ent.renderYawOffset = shadow.track.renderYawOffset
-            ent.rotationYaw = shadow.track.rotationYaw
-            ent.rotationPitch = shadow.track.rotationPitch
-            ent.rotationYawHead = shadow.track.rotationYaw
-            ent.prevRotationYawHead = shadow.track.rotationYaw
-
-            // 渲染
-            renderManager.setPlayerViewY(180.0f)
-            renderManager.isRenderShadow = false
-            GlStateManager.depthMask(true)
-            GlStateManager.color(1f, 1f, 1f, alpha)
-            renderManager.renderEntity(ent, 0.0, 0.0, 0.0, 0.0f, 1.0f, false)
-            renderManager.isRenderShadow = true
-
-            // 恢复原始旋转值
+                renderManager.setPlayerViewY(180.0f)
+                renderManager.isRenderShadow = false
+                GlStateManager.depthMask(true)
+                GlStateManager.color(1f, 1f, 1f, alpha)
+                renderManager.renderEntity(ent, 0.0, 0.0, 0.0, 0.0f, 1.0f, false)
+            }
+        } finally {
             ent.renderYawOffset = originalYawOffset
             ent.rotationYaw = originalYaw
             ent.rotationPitch = originalPitch
             ent.prevRotationYawHead = originalPrevYawHead
             ent.rotationYawHead = originalYawHead
-
-        } finally {
-            GlStateManager.popMatrix()
-
-            RenderHelper.disableStandardItemLighting()
-            GlStateManager.disableRescaleNormal()
-            GlStateManager.setActiveTexture(OpenGlHelper.lightmapTexUnit)
-            GlStateManager.disableTexture2D()
-            GlStateManager.setActiveTexture(OpenGlHelper.defaultTexUnit)
-
-            // 恢复混合模式
-            if (needsBlend) {
-                GlStateManager.disableBlend()
-            }
+            renderManager.setPlayerViewY(originalPlayerViewY)
+            renderManager.isRenderShadow = originalRenderShadow
         }
     }
 

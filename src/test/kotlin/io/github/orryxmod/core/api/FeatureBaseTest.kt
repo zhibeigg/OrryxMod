@@ -14,13 +14,13 @@ class FeatureBaseTest {
     @Test
     fun `enable and disable state toggle`() {
         val feature = TestFeature()
-        assertTrue(feature.enabled)
-
-        feature.disable()
         assertFalse(feature.enabled)
 
         feature.enable()
         assertTrue(feature.enabled)
+
+        feature.disable()
+        assertFalse(feature.enabled)
     }
 
     @Test

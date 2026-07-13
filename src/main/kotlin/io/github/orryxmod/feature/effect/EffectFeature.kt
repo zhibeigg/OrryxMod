@@ -1,5 +1,6 @@
 package io.github.orryxmod.feature.effect
 
+import io.github.orryxmod.OrryxMod
 import io.github.orryxmod.core.EntityTrackerRegistry
 import io.github.orryxmod.core.api.Feature
 import io.github.orryxmod.core.api.FeatureBase
@@ -37,15 +38,21 @@ object EffectFeature : FeatureBase() {
     private const val MAX_FLICKERS = 20
 
     override fun enable() {
-        super.enable()
-        // 注册 Forge 事件监听
+        if (enabled) return
+        // 先完成监听器注册，再切换状态，避免初始化失败后留下半启用状态
         MinecraftForge.EVENT_BUS.register(this)
+        super.enable()
     }
 
     override fun disable() {
+        if (!enabled) return
+        try {
+            MinecraftForge.EVENT_BUS.unregister(this)
+        } catch (ex: Exception) {
+            OrryxMod.logger.error("[EffectFeature] Failed to unregister Forge listener", ex)
+        }
+        clearEffects()
         super.disable()
-        // 注销 Forge 事件监听
-        MinecraftForge.EVENT_BUS.unregister(this)
     }
 
     // ========== Forge 事件处理 ==========
@@ -64,7 +71,7 @@ object EffectFeature : FeatureBase() {
         // 清理过期的 Flicker 效果（释放 Display List 资源）
         flickerEffects.removeIf { effect ->
             if (!effect.isActive) {
-                effect.dispose()
+                disposeFlicker(effect)
                 true
             } else {
                 false
@@ -168,7 +175,7 @@ object EffectFeature : FeatureBase() {
         // 移除过期的效果（释放 Display List 资源）
         flickerEffects.removeIf { effect ->
             if (!effect.isActive) {
-                effect.dispose()
+                disposeFlicker(effect)
                 true
             } else {
                 false
@@ -177,7 +184,7 @@ object EffectFeature : FeatureBase() {
 
         // 限制效果数量（释放最旧的 Display List）
         if (flickerEffects.size >= MAX_FLICKERS) {
-            flickerEffects.removeFirst().dispose()
+            disposeFlicker(flickerEffects.removeFirst())
         }
 
         // 创建并初始化效果
@@ -225,11 +232,24 @@ object EffectFeature : FeatureBase() {
 
     @OnDisconnect
     fun onDisconnect() {
+        clearEffects()
+    }
+
+    private fun clearEffects() {
         ghostEffects.clear()
-        // 释放所有 Flicker 效果的 Display List 资源
-        flickerEffects.forEach { it.dispose() }
+        flickerEffects.forEach(::disposeFlicker)
         flickerEffects.clear()
+        entityShowEffects.values.forEach { it.clearAllShadows() }
         entityShowEffects.clear()
+        EntityTrackerRegistry.clear()
+    }
+
+    private fun disposeFlicker(effect: FlickerEffect) {
+        try {
+            effect.dispose()
+        } catch (ex: Exception) {
+            OrryxMod.logger.error("[EffectFeature] Failed to dispose Flicker effect", ex)
+        }
     }
 
     // ========== 测试方法 ==========

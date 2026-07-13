@@ -20,6 +20,18 @@ import net.minecraft.util.math.BlockPos
 @Feature("navigation", description = "自动寻路")
 object NavigationFeature : FeatureBase() {
 
+    override fun enable() {
+        if (enabled) return
+        BaritoneUtils.initialize()
+        super.enable()
+    }
+
+    override fun disable() {
+        if (!enabled) return
+        cancelAndReset()
+        super.disable()
+    }
+
     // ========== 网络包处理 ==========
 
     @OnPacket(OrryxPacket.NavigationStart::class)
@@ -67,11 +79,13 @@ object NavigationFeature : FeatureBase() {
         config: NavigationConfig = NavigationConfig()
     ) {
         try {
-            // 先取消现有导航
-            BaritoneUtils.cancelEverything()
+            // 先取消现有导航并清理旧状态
+            cancelBaritone()
+            NavigationState.reset()
 
             val baritone = BaritoneUtils.primary ?: run {
                 OrryxMod.logger.error("Baritone not available")
+                NavigationState.stopNavigation(NavigationStatus.FAILED)
                 publishFailedEvent(target, NavigationEvent.Failed.FailureReason.UNKNOWN)
                 return
             }
@@ -86,6 +100,7 @@ object NavigationFeature : FeatureBase() {
             OrryxMod.logger.info("Navigation started to $target (range: $range)")
         } catch (ex: Exception) {
             OrryxMod.logger.error("Failed to start navigation", ex)
+            cancelBaritone()
             NavigationState.stopNavigation(NavigationStatus.FAILED)
             publishFailedEvent(target, NavigationEvent.Failed.FailureReason.UNKNOWN)
         }
@@ -95,19 +110,17 @@ object NavigationFeature : FeatureBase() {
      * 停止导航
      */
     fun stopNavigation() {
+        val target = NavigationState.targetPos
+        cancelBaritone()
+        NavigationState.stopNavigation(NavigationStatus.CANCELLED)
+
         try {
-            val target = NavigationState.targetPos
-
-            BaritoneUtils.cancelEverything()
-            NavigationState.stopNavigation(NavigationStatus.CANCELLED)
-
-            // 发布取消事件
             EventBus.publish(NavigationEvent.Cancelled(target))
-
-            OrryxMod.logger.info("Navigation stopped")
         } catch (ex: Exception) {
-            OrryxMod.logger.error("Failed to stop navigation", ex)
+            OrryxMod.logger.error("Failed to publish navigation cancellation", ex)
         }
+
+        OrryxMod.logger.info("Navigation stopped")
     }
 
     /**
@@ -144,10 +157,7 @@ object NavigationFeature : FeatureBase() {
 
     @OnDisconnect
     fun onDisconnect() {
-        if (NavigationState.isNavigating) {
-            stopNavigation()
-        }
-        NavigationState.reset()
+        cancelAndReset(publishCancellation = NavigationState.isNavigating)
     }
 
     // ========== 私有方法 ==========
@@ -167,6 +177,7 @@ object NavigationFeature : FeatureBase() {
                 }
             }
             NavigationStatus.FAILED -> {
+                cancelBaritone()
                 publishFailedEvent(target, determineFailureReason())
                 OrryxMod.logger.warn("Navigation failed after ${elapsed}ms")
             }
@@ -198,13 +209,35 @@ object NavigationFeature : FeatureBase() {
         EventBus.publish(NavigationEvent.Failed(target, reason))
     }
 
+    private fun cancelAndReset(publishCancellation: Boolean = false) {
+        val target = NavigationState.targetPos
+        cancelBaritone()
+        NavigationState.reset()
+
+        if (publishCancellation) {
+            try {
+                EventBus.publish(NavigationEvent.Cancelled(target))
+            } catch (ex: Exception) {
+                OrryxMod.logger.error("Failed to publish navigation cancellation", ex)
+            }
+        }
+    }
+
+    private fun cancelBaritone() {
+        try {
+            BaritoneUtils.cancelEverything()
+        } catch (ex: Exception) {
+            OrryxMod.logger.error("Failed to cancel Baritone navigation", ex)
+        }
+    }
+
     /**
      * 判断失败原因
      */
     private fun determineFailureReason(): NavigationEvent.Failed.FailureReason {
         val config = NavigationState.config
         return when {
-            config.timeout > 0 && NavigationState.elapsedTime > config.timeout ->
+            config.timeout > 0 && NavigationState.elapsedTime >= config.timeout ->
                 NavigationEvent.Failed.FailureReason.TIMEOUT
             !BaritoneUtils.isActive && !BaritoneUtils.isPathing ->
                 NavigationEvent.Failed.FailureReason.BARITONE_STOPPED

@@ -3,8 +3,9 @@ package io.github.orryxmod.feature.bloom
 import io.github.orryxmod.core.api.Feature
 import io.github.orryxmod.core.api.FeatureBase
 import io.github.orryxmod.core.api.OnDisconnect
+import io.github.orryxmod.core.api.OnPacket
 import io.github.orryxmod.core.network.OrryxPacket
-import io.github.orryxmod.core.network.PacketDispatcher
+import io.github.orryxmod.core.render.RenderUtils
 import io.github.orryxmod.util.MC
 import net.minecraft.client.renderer.GlStateManager
 import net.minecraft.client.renderer.OpenGlHelper
@@ -15,6 +16,8 @@ import net.minecraftforge.fml.common.eventhandler.EventPriority
 import net.minecraftforge.fml.common.eventhandler.SubscribeEvent
 import org.lwjgl.opengl.GL11
 import org.lwjgl.opengl.GL13
+import org.lwjgl.opengl.GL20
+import org.lwjgl.opengl.GL30
 
 /**
  * 泛光效果功能模块
@@ -40,6 +43,10 @@ object BloomFeature : FeatureBase() {
     // 泛光渲染状态
     private var bloomMark = false
     private var mainFBOBackup: Framebuffer? = null
+    private var framebufferBindingBackup = 0
+    private var shaderProgramBackup = 0
+    private var activeTextureBackup = GL13.GL_TEXTURE0
+    private var depthMaskBackup = true
 
     private data class BloomCandidate(
         val entity: net.minecraft.entity.EntityLivingBase,
@@ -80,24 +87,27 @@ object BloomFeature : FeatureBase() {
         super.enable()
         MinecraftForge.EVENT_BUS.register(this)
 
-        // 初始化着色器
-        if (OpenGlHelper.shadersSupported) {
-            ShaderManager.init()
+        // 初始化着色器；失败时保持功能注册，但所有 Bloom 渲染入口都会安全跳过。
+        if (ShaderManager.init()) {
             io.github.orryxmod.OrryxMod.logger.info("[Bloom] Shader initialized")
         } else {
-            io.github.orryxmod.OrryxMod.logger.warn("[Bloom] Shaders not supported!")
+            io.github.orryxmod.OrryxMod.logger.warn("[Bloom] Shader unavailable or initialization failed")
         }
+    }
 
-        // 注册配置包处理器
-        PacketDispatcher.register<OrryxPacket.BloomConfigSync> { packet ->
-            BloomConfigManager.syncAll(packet.configs)
-        }
-        PacketDispatcher.register<OrryxPacket.BloomConfigUpdate> { packet ->
-            BloomConfigManager.update(packet.id, packet.config)
-        }
-        PacketDispatcher.register<OrryxPacket.BloomConfigRemove> { packet ->
-            BloomConfigManager.remove(packet.id)
-        }
+    @OnPacket(OrryxPacket.BloomConfigSync::class)
+    fun onConfigSync(packet: OrryxPacket.BloomConfigSync) {
+        BloomConfigManager.syncAll(packet.configs)
+    }
+
+    @OnPacket(OrryxPacket.BloomConfigUpdate::class)
+    fun onConfigUpdate(packet: OrryxPacket.BloomConfigUpdate) {
+        BloomConfigManager.update(packet.id, packet.config)
+    }
+
+    @OnPacket(OrryxPacket.BloomConfigRemove::class)
+    fun onConfigRemove(packet: OrryxPacket.BloomConfigRemove) {
+        BloomConfigManager.remove(packet.id)
     }
 
     override fun disable() {
@@ -121,19 +131,34 @@ object BloomFeature : FeatureBase() {
      */
     @JvmStatic
     fun start(): Boolean {
-        if (!Config.enabled || !ShaderManager.allowedShader()) return false
-        if (bloomMark) return false
+        if (!Config.enabled || !ShaderManager.allowedShader() || bloomMark) return false
 
         val mainFBO = MC.framebuffer ?: return false
-        ensureBloomFBO(mainFBO)
-        val glowFBO = bloomFBO ?: return false
+        val previousFramebuffer = GL11.glGetInteger(GL30.GL_FRAMEBUFFER_BINDING)
+        val previousProgram = GL11.glGetInteger(GL20.GL_CURRENT_PROGRAM)
+        val previousActiveTexture = GL11.glGetInteger(GL13.GL_ACTIVE_TEXTURE)
+        val previousDepthMask = GL11.glGetBoolean(GL11.GL_DEPTH_WRITEMASK)
+        var started = false
 
-        bloomMark = true
-        mainFBOBackup = mainFBO
+        try {
+            ensureBloomFBO(mainFBO)
+            val glowFBO = bloomFBO ?: return false
+            glowFBO.framebufferClear()
+            glowFBO.bindFramebuffer(true)
 
-        glowFBO.framebufferClear()
-        glowFBO.bindFramebuffer(true)
-        return true
+            mainFBOBackup = mainFBO
+            framebufferBindingBackup = previousFramebuffer
+            shaderProgramBackup = previousProgram
+            activeTextureBackup = previousActiveTexture
+            depthMaskBackup = previousDepthMask
+            bloomMark = true
+            started = true
+            return true
+        } finally {
+            if (!started) {
+                restoreRenderState(previousFramebuffer, previousProgram, previousActiveTexture, previousDepthMask)
+            }
+        }
     }
 
     /**
@@ -142,28 +167,42 @@ object BloomFeature : FeatureBase() {
     @JvmStatic
     fun end() {
         if (!bloomMark) return
-        bloomMark = false
 
-        val mainFBO = mainFBOBackup ?: return
-        val glowFBO = bloomFBO ?: return
+        val mainFBO = mainFBOBackup
+        val glowFBO = bloomFBO
+        val previousFramebuffer = framebufferBindingBackup
+        val previousProgram = shaderProgramBackup
+        val previousActiveTexture = activeTextureBackup
+        val previousDepthMask = depthMaskBackup
 
-        val resultFBO = BloomEffect.renderBlurAndBlend(glowFBO, mainFBO, null)
-        if (resultFBO != null) {
-            GlStateManager.setActiveTexture(GL13.GL_TEXTURE0)
-            GlStateManager.enableTexture2D()
-            resultFBO.bindFramebufferTexture()
+        try {
+            if (mainFBO == null || glowFBO == null) return
 
-            GlStateManager.disableBlend()
-            GlStateManager.disableDepth()
-            GlStateManager.depthMask(false)
-            ShaderManager.renderFullImageInFBO(mainFBO, ShaderManager.PROGRAM_IMAGE) { program ->
-                ShaderManager.setUniform1i(program, "colourTexture", 0)
+            RenderUtils.withGlState(
+                blend = GL11.glIsEnabled(GL11.GL_BLEND),
+                depth = GL11.glIsEnabled(GL11.GL_DEPTH_TEST),
+                lighting = GL11.glIsEnabled(GL11.GL_LIGHTING),
+                texture = GL11.glIsEnabled(GL11.GL_TEXTURE_2D)
+            ) {
+                val resultFBO = BloomEffect.renderBlurAndBlend(glowFBO, mainFBO, null)
+                if (resultFBO != null) {
+                    GlStateManager.setActiveTexture(GL13.GL_TEXTURE0)
+                    GlStateManager.enableTexture2D()
+                    resultFBO.bindFramebufferTexture()
+
+                    GlStateManager.disableBlend()
+                    GlStateManager.disableDepth()
+                    GlStateManager.depthMask(false)
+                    ShaderManager.renderFullImageInFBO(mainFBO, ShaderManager.PROGRAM_IMAGE) { program ->
+                        ShaderManager.setUniform1i(program, "colourTexture", 0)
+                    }
+                }
             }
-            GlStateManager.depthMask(true)
-            GlStateManager.enableDepth()
+        } finally {
+            bloomMark = false
+            mainFBOBackup = null
+            restoreRenderState(previousFramebuffer, previousProgram, previousActiveTexture, previousDepthMask)
         }
-
-        mainFBOBackup = null
     }
 
     /**
@@ -211,15 +250,27 @@ object BloomFeature : FeatureBase() {
         }
 
         val bloomEntities = selectCandidates(candidates, Config.maxBloomEntities)
-        val hasGlow = glowRenderCallbacks.isNotEmpty() || bloomEntities.isNotEmpty()
+        val pendingGlowCallbacks = glowRenderCallbacks.toList()
+        val hasGlow = pendingGlowCallbacks.isNotEmpty() || bloomEntities.isNotEmpty()
         if (!hasGlow) return
+        glowRenderCallbacks.removeAll(pendingGlowCallbacks.toSet())
 
-        ensureBloomFBO(mainFBO)
-        val glowFBO = bloomFBO ?: return
+        val previousFramebuffer = GL11.glGetInteger(GL30.GL_FRAMEBUFFER_BINDING)
+        val previousProgram = GL11.glGetInteger(GL20.GL_CURRENT_PROGRAM)
+        val previousActiveTexture = GL11.glGetInteger(GL13.GL_ACTIVE_TEXTURE)
+        val previousDepthMask = GL11.glGetBoolean(GL11.GL_DEPTH_WRITEMASK)
 
-        // 保存所有 OpenGL 状态
-        GL11.glPushAttrib(GL11.GL_ALL_ATTRIB_BITS)
+        try {
+            ensureBloomFBO(mainFBO)
+            val glowFBO = bloomFBO ?: return
 
+            // RenderUtils 使用 glPushAttrib 保存固定管线状态；FBO 和 shader 由外层 finally 恢复。
+            RenderUtils.withGlState(
+                blend = GL11.glIsEnabled(GL11.GL_BLEND),
+                depth = GL11.glIsEnabled(GL11.GL_DEPTH_TEST),
+                lighting = GL11.glIsEnabled(GL11.GL_LIGHTING),
+                texture = GL11.glIsEnabled(GL11.GL_TEXTURE_2D)
+            ) {
         // 按配置分组实体
         val groupedEntities = bloomEntities.groupBy { it.config.name }
 
@@ -239,28 +290,7 @@ object BloomFeature : FeatureBase() {
             GL11.glClearColor(0f, 0f, 0f, 0f)
             GL11.glClear(GL11.GL_COLOR_BUFFER_BIT)
 
-            GlStateManager.enableDepth()
-            GlStateManager.depthMask(false)
-            OpenGlHelper.setLightmapTextureCoords(OpenGlHelper.lightmapTexUnit, 240f, 240f)
-
-            // 以"纯色遮罩"方式写入高亮缓冲
-            GlStateManager.disableLighting()
-            GlStateManager.disableBlend()
-            GlStateManager.setActiveTexture(GL13.GL_TEXTURE1)
-            GlStateManager.disableTexture2D()
-            GlStateManager.bindTexture(0)
-            GlStateManager.setActiveTexture(GL13.GL_TEXTURE0)
-            GlStateManager.enableTexture2D()
-            GlStateManager.color(1f, 1f, 1f, 1f)
-
-            // 启用多边形偏移，避免 Z-fighting
-            GL11.glEnable(GL11.GL_POLYGON_OFFSET_FILL)
-            GL11.glPolygonOffset(-1f, -1f)
-
-            ShaderManager.useProgram(ShaderManager.PROGRAM_MASK)
-            ShaderManager.setUniform4f(ShaderManager.PROGRAM_MASK, "u_color", 1f, 1f, 1f, 1f)
-            ShaderManager.setUniform1i(ShaderManager.PROGRAM_MASK, "u_texture", 0)
-            ShaderManager.setUniform1f(ShaderManager.PROGRAM_MASK, "u_alphaThreshold", 0.1f)
+            prepareMaskRenderState()
 
             for (candidate in group) {
                 try {
@@ -273,37 +303,16 @@ object BloomFeature : FeatureBase() {
 
                     GlStateManager.color(1f, 1f, 1f, 1f)
                     renderer.doRender(entity, rx, ry, rz, entity.rotationYaw, partialTicks)
-
-                    // doRender 后恢复状态
-                    GlStateManager.depthMask(false)
-                    OpenGlHelper.setLightmapTextureCoords(OpenGlHelper.lightmapTexUnit, 240f, 240f)
-                    GlStateManager.disableLighting()
-                    GlStateManager.disableBlend()
-                    GlStateManager.setActiveTexture(GL13.GL_TEXTURE1)
-                    GlStateManager.disableTexture2D()
-                    GlStateManager.bindTexture(0)
-                    GlStateManager.setActiveTexture(GL13.GL_TEXTURE0)
-                    GlStateManager.enableTexture2D()
-                    GlStateManager.color(1f, 1f, 1f, 1f)
-
-                    ShaderManager.useProgram(ShaderManager.PROGRAM_MASK)
-                    ShaderManager.setUniform4f(ShaderManager.PROGRAM_MASK, "u_color", 1f, 1f, 1f, 1f)
-                    ShaderManager.setUniform1i(ShaderManager.PROGRAM_MASK, "u_texture", 0)
-                    ShaderManager.setUniform1f(ShaderManager.PROGRAM_MASK, "u_alphaThreshold", 0.1f)
                 } catch (e: Exception) {
                     io.github.orryxmod.OrryxMod.logger.error("[Bloom] Error rendering entity", e)
-                    // 异常时恢复 OpenGL 状态并跳过该实体
-                    ShaderManager.releaseProgram()
-                    GL11.glDisable(GL11.GL_POLYGON_OFFSET_FILL)
-                    GlStateManager.enableLighting()
-                    GlStateManager.depthMask(true)
-                    continue
+                } finally {
+                    prepareMaskRenderState()
                 }
             }
 
             ShaderManager.releaseProgram()
             GL11.glDisable(GL11.GL_POLYGON_OFFSET_FILL)
-            GlStateManager.setActiveTexture(GL13.GL_TEXTURE1)
+            GlStateManager.setActiveTexture(OpenGlHelper.lightmapTexUnit)
             GlStateManager.disableTexture2D()
             GlStateManager.bindTexture(0)
             GlStateManager.setActiveTexture(GL13.GL_TEXTURE0)
@@ -335,13 +344,9 @@ object BloomFeature : FeatureBase() {
             GlStateManager.enableDepth()
         }
 
-        // 处理发光回调
-        if (glowRenderCallbacks.isNotEmpty()) {
-            val callbacks = glowRenderCallbacks.toList()
-            glowRenderCallbacks.clear()
-
-            // 按配置分组回调
-            val groupedCallbacks = callbacks.groupBy { it.config?.name }
+        // 处理本帧发光回调；进入 GL 区域前已从共享队列移除，异常时不会重复执行。
+        if (pendingGlowCallbacks.isNotEmpty()) {
+            val groupedCallbacks = pendingGlowCallbacks.groupBy { it.config?.name }
 
             for ((_, group) in groupedCallbacks) {
                 val config = group.first().config
@@ -359,8 +364,8 @@ object BloomFeature : FeatureBase() {
                 group.forEach { glowCallback ->
                     try {
                         glowCallback.callback(partialTicks)
-                    } catch (e: Exception) {
-                        e.printStackTrace()
+                    } catch (ex: Exception) {
+                        io.github.orryxmod.OrryxMod.logger.error("[Bloom] Error rendering glow callback", ex)
                     }
                 }
 
@@ -390,17 +395,46 @@ object BloomFeature : FeatureBase() {
             }
         }
 
-        // 恢复所有 OpenGL 状态
-        GL11.glPopAttrib()
+            }
+        } finally {
+            restoreRenderState(previousFramebuffer, previousProgram, previousActiveTexture, previousDepthMask)
+        }
+    }
 
-        // 确保主 FBO 正确绑定
-        mainFBO.bindFramebuffer(true)
+    private fun prepareMaskRenderState() {
+        GlStateManager.enableDepth()
+        GlStateManager.depthMask(false)
+        OpenGlHelper.setLightmapTextureCoords(OpenGlHelper.lightmapTexUnit, 240f, 240f)
+        GlStateManager.disableLighting()
+        GlStateManager.disableBlend()
+
+        GlStateManager.setActiveTexture(OpenGlHelper.lightmapTexUnit)
+        GlStateManager.disableTexture2D()
+        GlStateManager.bindTexture(0)
+        GlStateManager.setActiveTexture(GL13.GL_TEXTURE0)
+        GlStateManager.enableTexture2D()
+        GlStateManager.color(1f, 1f, 1f, 1f)
+
+        GL11.glEnable(GL11.GL_POLYGON_OFFSET_FILL)
+        GL11.glPolygonOffset(-1f, -1f)
+        ShaderManager.useProgram(ShaderManager.PROGRAM_MASK)
+        ShaderManager.setUniform4f(ShaderManager.PROGRAM_MASK, "u_color", 1f, 1f, 1f, 1f)
+        ShaderManager.setUniform1i(ShaderManager.PROGRAM_MASK, "u_texture", 0)
+        ShaderManager.setUniform1f(ShaderManager.PROGRAM_MASK, "u_alphaThreshold", 0.1f)
+    }
+
+    private fun restoreRenderState(framebuffer: Int, program: Int, activeTexture: Int, depthMask: Boolean) {
+        GL20.glUseProgram(program)
+        GlStateManager.setActiveTexture(activeTexture)
+        GlStateManager.depthMask(depthMask)
+        OpenGlHelper.glBindFramebuffer(OpenGlHelper.GL_FRAMEBUFFER, framebuffer)
     }
 
     private fun ensureBloomFBO(mainFBO: Framebuffer) {
-        val needsResize = bloomFBO == null ||
-            bloomFBO!!.framebufferWidth != mainFBO.framebufferWidth ||
-            bloomFBO!!.framebufferHeight != mainFBO.framebufferHeight
+        val currentFBO = bloomFBO
+        val needsResize = currentFBO == null ||
+            currentFBO.framebufferWidth != mainFBO.framebufferWidth ||
+            currentFBO.framebufferHeight != mainFBO.framebufferHeight
 
         if (needsResize) {
             bloomFBO?.deleteFramebuffer()
@@ -420,29 +454,49 @@ object BloomFeature : FeatureBase() {
     }
 
     private fun hookDepthBuffer(fbo: Framebuffer, depthBuffer: Int) {
-        OpenGlHelper.glBindFramebuffer(OpenGlHelper.GL_FRAMEBUFFER, fbo.framebufferObject)
-        OpenGlHelper.glFramebufferRenderbuffer(
-            OpenGlHelper.GL_FRAMEBUFFER,
-            OpenGlHelper.GL_DEPTH_ATTACHMENT,
-            OpenGlHelper.GL_RENDERBUFFER,
-            depthBuffer
-        )
-        OpenGlHelper.glBindFramebuffer(OpenGlHelper.GL_FRAMEBUFFER, 0)
+        val previousFramebuffer = GL11.glGetInteger(GL30.GL_FRAMEBUFFER_BINDING)
+        try {
+            OpenGlHelper.glBindFramebuffer(OpenGlHelper.GL_FRAMEBUFFER, fbo.framebufferObject)
+            OpenGlHelper.glFramebufferRenderbuffer(
+                OpenGlHelper.GL_FRAMEBUFFER,
+                OpenGlHelper.GL_DEPTH_ATTACHMENT,
+                OpenGlHelper.GL_RENDERBUFFER,
+                depthBuffer
+            )
+        } finally {
+            OpenGlHelper.glBindFramebuffer(OpenGlHelper.GL_FRAMEBUFFER, previousFramebuffer)
+        }
     }
 
     @OnDisconnect
     fun onDisconnect() {
+        resetActiveBloomState()
         glowRenderCallbacks.clear()
         BloomConfigManager.clear()
         bloomFBODepthBuffer = -1
     }
 
     private fun cleanup() {
+        resetActiveBloomState()
+        glowRenderCallbacks.clear()
+        BloomConfigManager.clear()
+
         bloomFBO?.deleteFramebuffer()
         bloomFBO = null
         bloomFBODepthBuffer = -1
         BloomEffect.cleanup()
         ShaderManager.cleanup()
-        glowRenderCallbacks.clear()
+    }
+
+    private fun resetActiveBloomState() {
+        if (bloomMark) {
+            restoreRenderState(framebufferBindingBackup, shaderProgramBackup, activeTextureBackup, depthMaskBackup)
+        }
+        bloomMark = false
+        mainFBOBackup = null
+        framebufferBindingBackup = 0
+        shaderProgramBackup = 0
+        activeTextureBackup = GL13.GL_TEXTURE0
+        depthMaskBackup = true
     }
 }

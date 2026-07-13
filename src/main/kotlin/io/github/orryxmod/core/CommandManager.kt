@@ -4,9 +4,13 @@ import io.github.orryxmod.core.registry.FeatureRegistry
 import io.github.orryxmod.feature.aim.AimConfig
 import io.github.orryxmod.feature.aim.AimFeature
 import io.github.orryxmod.feature.aim.AimModule
+import io.github.orryxmod.feature.aim.IndicatorType
 import io.github.orryxmod.feature.bloom.BloomConfig
 import io.github.orryxmod.feature.bloom.BloomConfigManager
 import io.github.orryxmod.feature.bloom.BloomFeature
+import io.github.orryxmod.feature.collider.ColliderData
+import io.github.orryxmod.feature.collider.ColliderManager
+import io.github.orryxmod.feature.collider.ColliderShape
 import io.github.orryxmod.feature.effect.EffectFeature
 import io.github.orryxmod.feature.effect.FlickerConfig
 import io.github.orryxmod.feature.effect.GhostConfig
@@ -69,11 +73,14 @@ object CommandManager {
                 }
                 val featureId = args[1]
                 val feature = FeatureRegistry.get(featureId)
-                if (feature != null) {
-                    feature.enable()
+                if (feature == null) {
+                    sendError("Feature not found: $featureId")
+                } else if (feature.enabled) {
+                    sendInfo("Feature is already enabled: $featureId")
+                } else if (FeatureRegistry.enable(feature)) {
                     sendSuccess("Enabled feature: $featureId")
                 } else {
-                    sendError("Feature not found: $featureId")
+                    sendError("Failed to enable feature: $featureId")
                 }
             }
             "disable" -> {
@@ -83,11 +90,14 @@ object CommandManager {
                 }
                 val featureId = args[1]
                 val feature = FeatureRegistry.get(featureId)
-                if (feature != null) {
-                    feature.disable()
+                if (feature == null) {
+                    sendError("Feature not found: $featureId")
+                } else if (!feature.enabled) {
+                    sendInfo("Feature is already disabled: $featureId")
+                } else if (FeatureRegistry.disable(feature)) {
                     sendSuccess("Disabled feature: $featureId")
                 } else {
-                    sendError("Feature not found: $featureId")
+                    sendError("Failed to disable feature: $featureId")
                 }
             }
 
@@ -182,10 +192,17 @@ object CommandManager {
                     "area", "a" -> AimModule.AREA
                     else -> AimModule.POINT
                 }
-                val scale = args.getOrNull(2)?.toDoubleOrNull() ?: 1.0
-                val maxDist = args.getOrNull(3)?.toDoubleOrNull() ?: 50.0
-                AimFeature.startAiming("test", module, AimConfig(scale = scale, maxDistance = maxDist))
-                sendSuccess("Aim started: $mode")
+                val indicatorStr = args.getOrNull(2) ?: "texture"
+                val indicatorType = IndicatorType.fromString(indicatorStr)
+                val scale = args.getOrNull(3)?.toDoubleOrNull() ?: 1.0
+                val maxDist = args.getOrNull(4)?.toDoubleOrNull() ?: 50.0
+                val config = AimConfig(
+                    scale = scale,
+                    maxDistance = maxDist,
+                    indicatorType = indicatorType
+                )
+                AimFeature.startAiming("test", module, config)
+                sendSuccess("Aim started: mode=$mode, indicator=$indicatorStr")
                 sendInfo("Left click = confirm, Right click/ESC = cancel")
             }
             "cancelaim" -> {
@@ -334,6 +351,93 @@ object CommandManager {
                 sendSuccess("Max bloom entities set to: $max")
             }
 
+            // ========== 碰撞箱测试命令 ==========
+            "collider" -> {
+                val player = MC.player ?: return
+                val sub = args.getOrNull(1)?.lowercase() ?: "help"
+                val px = player.posX
+                val py = player.posY
+                val pz = player.posZ
+                var nextId = 0
+                fun genId() = "test-collider-${nextId++}-${System.currentTimeMillis()}"
+
+                when (sub) {
+                    "sphere" -> {
+                        val radius = args.getOrNull(2)?.toDoubleOrNull() ?: 1.5
+                        val data = ColliderData(
+                            id = genId(), r = 0, g = 255, b = 0, a = 200,
+                            shape = ColliderShape.Sphere(px, py + 1.0, pz, radius)
+                        )
+                        ColliderManager.add(data)
+                        sendSuccess("Sphere collider: radius=$radius")
+                    }
+                    "aabb" -> {
+                        val hx = args.getOrNull(2)?.toDoubleOrNull() ?: 1.0
+                        val hy = args.getOrNull(3)?.toDoubleOrNull() ?: 1.0
+                        val hz = args.getOrNull(4)?.toDoubleOrNull() ?: 1.0
+                        val data = ColliderData(
+                            id = genId(), r = 255, g = 255, b = 0, a = 200,
+                            shape = ColliderShape.AABB(px, py + hy, pz, hx, hy, hz)
+                        )
+                        ColliderManager.add(data)
+                        sendSuccess("AABB collider: half=($hx, $hy, $hz)")
+                    }
+                    "obb" -> {
+                        val hx = args.getOrNull(2)?.toDoubleOrNull() ?: 1.0
+                        val hy = args.getOrNull(3)?.toDoubleOrNull() ?: 1.0
+                        val hz = args.getOrNull(4)?.toDoubleOrNull() ?: 1.0
+                        // 使用玩家朝向生成四元数（绕 Y 轴旋转）
+                        val yawRad = Math.toRadians(-player.rotationYaw.toDouble())
+                        val halfYaw = yawRad / 2.0
+                        val qy = kotlin.math.sin(halfYaw).toFloat()
+                        val qw = kotlin.math.cos(halfYaw).toFloat()
+                        val data = ColliderData(
+                            id = genId(), r = 255, g = 128, b = 0, a = 200,
+                            shape = ColliderShape.OBB(px, py + hy, pz, hx, hy, hz, 0f, qy, 0f, qw)
+                        )
+                        ColliderManager.add(data)
+                        sendSuccess("OBB collider: half=($hx, $hy, $hz), yaw=${player.rotationYaw}")
+                    }
+                    "capsule" -> {
+                        val radius = args.getOrNull(2)?.toDoubleOrNull() ?: 0.5
+                        val halfHeight = args.getOrNull(3)?.toDoubleOrNull() ?: 1.0
+                        val data = ColliderData(
+                            id = genId(), r = 0, g = 200, b = 255, a = 200,
+                            shape = ColliderShape.Capsule(px, py + halfHeight + radius, pz, radius, halfHeight)
+                        )
+                        ColliderManager.add(data)
+                        sendSuccess("Capsule collider: radius=$radius, halfHeight=$halfHeight")
+                    }
+                    "ray" -> {
+                        val length = args.getOrNull(2)?.toDoubleOrNull() ?: 10.0
+                        val lookVec = player.lookVec
+                        val data = ColliderData(
+                            id = genId(), r = 255, g = 0, b = 0, a = 200,
+                            shape = ColliderShape.Ray(
+                                px, py + player.eyeHeight.toDouble(), pz,
+                                lookVec.x, lookVec.y, lookVec.z, length
+                            )
+                        )
+                        ColliderManager.add(data)
+                        sendSuccess("Ray collider: length=$length")
+                    }
+                    "clear" -> {
+                        val count = ColliderManager.size
+                        ColliderManager.clear()
+                        sendSuccess("Cleared $count colliders")
+                    }
+                    else -> {
+                        sendInfo("Usage: .collider <sphere|aabb|obb|capsule|ray|clear>")
+                        sendInfo("  .collider sphere [radius]")
+                        sendInfo("  .collider aabb [hx] [hy] [hz]")
+                        sendInfo("  .collider obb [hx] [hy] [hz]")
+                        sendInfo("  .collider capsule [radius] [halfHeight]")
+                        sendInfo("  .collider ray [length]")
+                        sendInfo("  .collider clear")
+                    }
+                }
+            }
+
             // ========== 帮助 ==========
             "help" -> {
                 sendMessage("${TextFormatting.YELLOW}===== Commands =====")
@@ -346,7 +450,8 @@ object CommandManager {
                 sendInfo("  .shadow [ms] [offsetX] / .clearshadow")
                 sendInfo("  .entityshow [ms] [alpha] [fadeOut] [offsetX]")
                 sendInfo("${TextFormatting.WHITE}--- Aim ---")
-                sendInfo("  .aim [point|dir|area] / .cancelaim")
+                sendInfo("  .aim [point|dir|area] [texture|model|circle] [scale] [maxDist]")
+                sendInfo("  .cancelaim")
                 sendInfo("${TextFormatting.WHITE}--- Navigation ---")
                 sendInfo("  .nav [x] [y] [z] / .stopnav")
                 sendInfo("${TextFormatting.WHITE}--- Mouse ---")
@@ -356,6 +461,8 @@ object CommandManager {
                 sendInfo("  .bloomadd <name> [r] [g] [b] [strength] [radius] [priority]")
                 sendInfo("  .bloomremove <name> / .bloomclear / .bloomlist")
                 sendInfo("  .bloomtest [r] [g] [b] [strength] / .bloommax [n]")
+                sendInfo("${TextFormatting.WHITE}--- Collider ---")
+                sendInfo("  .collider <sphere|aabb|obb|capsule|ray|clear>")
             }
 
             else -> {

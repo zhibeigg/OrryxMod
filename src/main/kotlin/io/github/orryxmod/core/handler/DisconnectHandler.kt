@@ -1,6 +1,7 @@
 package io.github.orryxmod.core.handler
 
 import io.github.orryxmod.OrryxMod
+import io.github.orryxmod.core.EntityTrackerRegistry
 import io.github.orryxmod.core.event.EventBus
 import io.github.orryxmod.core.event.Events
 import io.github.orryxmod.core.registry.FeatureRegistry
@@ -16,24 +17,33 @@ import net.minecraftforge.fml.common.network.FMLNetworkEvent
 object DisconnectHandler {
 
     @SubscribeEvent
-    fun onDisconnect(event: FMLNetworkEvent.ClientDisconnectionFromServerEvent) {
-        // 发布断开连接事件
-        EventBus.publish(Events.ClientDisconnected)
-
-        // 通知所有功能模块
-        FeatureRegistry.notifyDisconnect()
-
-        // 取消并重建协程 scope，防止旧协程在断开后继续运行
-        OrryxMod.resetScope()
-
-        // 清理断裂方块缓存，防止内存泄漏
-        OrryxMod.fractureBlock.blockNodes.clear()
-
-        // 将 EffectManager.clear() 调度到主线程执行，
-        // 因为 dispose() 可能涉及 GL 操作（如 glDeleteLists），
-        // 在网络线程调用会导致 OpenGL 错误或崩溃
+    fun onDisconnect(@Suppress("UNUSED_PARAMETER") event: FMLNetworkEvent.ClientDisconnectionFromServerEvent) {
+        // Forge 会在网络线程派发断线事件；所有可能触及 GL、LWJGL、Baritone
+        // 或世界对象的清理必须整体切回 Minecraft 主线程。
         MC.addScheduledTask {
-            EffectManager.clear()
+            runCleanupStep("publish disconnect event") {
+                EventBus.publish(Events.ClientDisconnected)
+            }
+            runCleanupStep("notify feature disconnect") {
+                FeatureRegistry.notifyDisconnect()
+            }
+            runCleanupStep("clear fracture cache") {
+                OrryxMod.fractureBlock.blockNodes.clear()
+            }
+            runCleanupStep("clear render effects") {
+                EffectManager.clearSessionEffects()
+            }
+            runCleanupStep("clear entity trackers") {
+                EntityTrackerRegistry.clear()
+            }
+        }
+    }
+
+    private fun runCleanupStep(name: String, action: () -> Unit) {
+        try {
+            action()
+        } catch (ex: Exception) {
+            OrryxMod.logger.error("Failed to $name during disconnect", ex)
         }
     }
 }

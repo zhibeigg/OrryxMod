@@ -20,6 +20,8 @@ class TransparentOverlay : GuiScreen() {
     override fun onGuiClosed() {
         super.onGuiClosed()
         Keyboard.enableRepeatEvents(false)
+        instanceClosed(this)
+        MouseFeature.onOverlayClosed()
     }
 
     /**
@@ -40,21 +42,32 @@ class TransparentOverlay : GuiScreen() {
     companion object {
         private var instance: TransparentOverlay? = null
 
-        fun show() {
-            if (MC.currentScreen !is TransparentOverlay) {
-                instance = TransparentOverlay()
-                MC.displayGuiScreen(instance)
-            }
+        fun show(): Boolean {
+            val current = MC.currentScreen
+            if (current === instance) return true
+            if (current != null) return false
+
+            val overlay = TransparentOverlay()
+            instance = overlay
+            MC.displayGuiScreen(overlay)
+            return MC.currentScreen === overlay
         }
 
         fun hide() {
-            if (MC.currentScreen is TransparentOverlay) {
+            val overlay = instance
+            if (overlay != null && MC.currentScreen === overlay) {
                 MC.displayGuiScreen(null)
             }
             instance = null
         }
 
+        private fun instanceClosed(overlay: TransparentOverlay) {
+            if (instance === overlay) {
+                instance = null
+            }
+        }
+
         val isShowing: Boolean
-            get() = MC.currentScreen is TransparentOverlay
+            get() = instance != null && MC.currentScreen === instance
     }
 }

@@ -9,7 +9,6 @@ import io.github.orryxmod.core.event.Events
 import io.github.orryxmod.core.network.OrryxPacket
 import io.github.orryxmod.core.network.PacketDispatcher
 import io.github.orryxmod.core.render.EffectManager
-import io.github.orryxmod.util.MC
 import org.lwjgl.input.Keyboard
 import org.lwjgl.input.Mouse
 
@@ -20,22 +19,42 @@ import org.lwjgl.input.Mouse
 @Feature("aim", description = "技能辅助瞄准")
 object AimFeature : FeatureBase() {
 
+    private var leftButtonWasDown = false
+    private var rightButtonWasDown = false
+    private var escapeWasDown = false
+
     override fun enable() {
         super.enable()
-        // 注册渲染器
+        syncInputState()
         if (!EffectManager.exists(AimRenderer.id)) {
-            EffectManager.add(AimRenderer)
+            EffectManager.addPersistent(AimRenderer)
         }
+    }
+
+    override fun disable() {
+        super.disable()
+        AimState.stopAiming()
+        EffectManager.remove(AimRenderer)
+        leftButtonWasDown = false
+        rightButtonWasDown = false
+        escapeWasDown = false
     }
 
     // ========== 网络包处理 ==========
 
     @OnPacket(OrryxPacket.AimRequest::class)
     fun onAimRequest(packet: OrryxPacket.AimRequest) {
+        if (!enabled) return
+
         val module = parseModule(packet.module)
         val config = AimConfig(
             scale = packet.scale,
-            maxDistance = packet.maxDistance
+            maxDistance = packet.maxDistance,
+            indicatorType = IndicatorType.fromString(packet.indicatorType),
+            indicatorColor = packet.indicatorColor,
+            indicatorAlpha = packet.indicatorAlpha,
+            indicatorRadius = packet.indicatorRadius,
+            modelScale = packet.modelScale
         )
 
         startAiming(packet.skill, module, config)
@@ -43,6 +62,8 @@ object AimFeature : FeatureBase() {
 
     @OnPacket(OrryxPacket.AimConfirm::class)
     fun onAimConfirm(packet: OrryxPacket.AimConfirm) {
+        if (!enabled) return
+
         if (packet.confirmed) {
             confirm()
         } else {
@@ -55,18 +76,28 @@ object AimFeature : FeatureBase() {
     @Subscribe
     fun onClientTick(event: Events.ClientTick) {
         if (event.phase != Events.ClientTick.Phase.END) return
-        if (!AimState.isAiming) return
 
-        // 检测鼠标左键确认
-        if (Mouse.isButtonDown(0)) {
+        val leftButtonDown = Mouse.isCreated() && Mouse.isButtonDown(0)
+        val rightButtonDown = Mouse.isCreated() && Mouse.isButtonDown(1)
+        val escapeDown = Keyboard.isCreated() && Keyboard.isKeyDown(Keyboard.KEY_ESCAPE)
+
+        val leftButtonPressed = leftButtonDown && !leftButtonWasDown
+        val rightButtonPressed = rightButtonDown && !rightButtonWasDown
+        val escapePressed = escapeDown && !escapeWasDown
+
+        leftButtonWasDown = leftButtonDown
+        rightButtonWasDown = rightButtonDown
+        escapeWasDown = escapeDown
+
+        if (!enabled || !AimState.isAiming) return
+
+        if (leftButtonPressed) {
             confirm()
             return
         }
 
-        // 检测右键或 ESC 取消
-        if (Mouse.isButtonDown(1) || Keyboard.isKeyDown(Keyboard.KEY_ESCAPE)) {
+        if (rightButtonPressed || escapePressed) {
             cancel()
-            return
         }
     }
 
@@ -76,10 +107,8 @@ object AimFeature : FeatureBase() {
      * 开始瞄准
      */
     fun startAiming(skill: String, module: AimModule = AimModule.POINT, config: AimConfig = AimConfig()) {
+        if (!enabled) return
         AimState.startAiming(skill, module, config)
-
-        // 可选：隐藏鼠标指针，启用自由视角
-        // MC.gameSettings.pauseOnLostFocus = false
     }
 
     /**
@@ -88,7 +117,6 @@ object AimFeature : FeatureBase() {
     fun confirm() {
         val result = AimState.getCurrentResult() ?: return
 
-        // 发送结果到服务器
         PacketDispatcher.send(
             OrryxPacket.AimResponse(
                 skill = result.skill,
@@ -124,6 +152,12 @@ object AimFeature : FeatureBase() {
     }
 
     // ========== 工具方法 ==========
+
+    private fun syncInputState() {
+        leftButtonWasDown = Mouse.isCreated() && Mouse.isButtonDown(0)
+        rightButtonWasDown = Mouse.isCreated() && Mouse.isButtonDown(1)
+        escapeWasDown = Keyboard.isCreated() && Keyboard.isKeyDown(Keyboard.KEY_ESCAPE)
+    }
 
     private fun parseModule(moduleName: String): AimModule {
         return when (moduleName.lowercase()) {

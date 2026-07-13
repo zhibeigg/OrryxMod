@@ -1,7 +1,7 @@
 package io.github.orryxmod.feature.shockwave
 
 import io.github.orryxmod.OrryxMod
-import io.github.orryxmod.feature.fractureblock.FractureBlockState
+import io.github.orryxmod.feature.fractureblock.BlockNode
 import io.github.orryxmod.util.MC
 import net.minecraft.block.Block
 import net.minecraft.block.state.IBlockState
@@ -220,7 +220,7 @@ object ShockwaveExecutor {
             var finalPos = BlockPos(pos.x, currentY, pos.z)
             var state = world.getBlockState(finalPos)
 
-            if (state is FractureBlockState) continue
+            if (state.block === OrryxMod.fractureBlock) continue
 
             // 处理方块上方传递
             val abovePos = finalPos.up()
@@ -262,7 +262,7 @@ object ShockwaveExecutor {
 
             // 客户端渲染断裂效果
             if (world.isRemote) {
-                if (!canTransferShockwave(world, finalPos, state)) {
+                if (!canTransferShockwave(world, finalPos, state) || hasTileEntity(world, finalPos, state)) {
                     continue
                 }
 
@@ -341,6 +341,13 @@ object ShockwaveExecutor {
     }
 
     /**
+     * 跳过任何已有或声明了 TileEntity 的方块，避免恢复时丢失 NBT。
+     */
+    private fun hasTileEntity(world: World, pos: BlockPos, state: IBlockState): Boolean {
+        return world.getTileEntity(pos) != null || state.block.hasTileEntity(state)
+    }
+
+    /**
      * 生成方块破坏粒子
      */
     private fun spawnBreakParticles(world: World, pos: BlockPos, state: IBlockState) {
@@ -374,12 +381,14 @@ object ShockwaveExecutor {
         bounce: Double,
         lifetime: Int
     ) {
-        // 每次创建新的 FractureBlockState 实例，避免修改 defaultState 单例
-        // 同一 tick 内多个冲击波并发执行时，共享 defaultState 会导致数据覆盖
-        val fractureBlockState = FractureBlockState(OrryxMod.fractureBlock)
-        fractureBlockState.setFractureInfo(pos, state, translation, rotation, bounce, lifetime)
+        val fractureBlock = OrryxMod.fractureBlock
+        val node = BlockNode(state, translation, rotation, bounce, lifetime)
+        fractureBlock.registerNode(pos, node)
 
-        world.setBlockState(pos, fractureBlockState, 3)
+        if (!world.setBlockState(pos, fractureBlock.defaultState, 3)) {
+            fractureBlock.blockNodes.remove(pos, node)
+            return
+        }
 
         // 正确触发光照更新
         world.checkLightFor(EnumSkyBlock.BLOCK, pos)

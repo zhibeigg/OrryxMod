@@ -97,6 +97,58 @@ class EffectManagerTest {
     }
 
     @Test
+    fun `persistent effect removed and re-enabled in same tick remains renderable`() {
+        var active = true
+        val effect = mockk<RenderableEffect>(relaxed = true)
+        every { effect.id } returns "persistent-singleton"
+        every { effect.renderPriority } returns 0
+        every { effect.isActive } answers { active }
+
+        EffectManager.addPersistent(effect)
+        EffectManager.update()
+
+        active = false
+        EffectManager.remove(effect)
+        assertFalse(EffectManager.exists("persistent-singleton"))
+
+        active = true
+        assertTrue(EffectManager.addPersistent(effect))
+        EffectManager.update()
+
+        assertTrue(EffectManager.exists("persistent-singleton"))
+        assertEquals(1, EffectManager.size)
+        val context = RenderContext(0f, 0.0, 0.0, 0.0)
+        EffectManager.render(context)
+        verify { effect.render(context) }
+        verify(exactly = 0) { effect.dispose() }
+
+        EffectManager.clearSessionEffects()
+        assertTrue(EffectManager.exists("persistent-singleton"))
+    }
+
+    @Test
+    fun `inactive persistent effect cleanup removes persistent marker`() {
+        var active = true
+        val effect = mockk<RenderableEffect>(relaxed = true)
+        every { effect.id } returns "expired-persistent"
+        every { effect.renderPriority } returns 0
+        every { effect.isActive } answers { active }
+
+        EffectManager.addPersistent(effect)
+        EffectManager.update()
+        active = false
+        EffectManager.update()
+
+        active = true
+        assertTrue(EffectManager.add(effect))
+        EffectManager.update()
+        EffectManager.clearSessionEffects()
+
+        assertFalse(EffectManager.exists("expired-persistent"))
+        verify(exactly = 2) { effect.dispose() }
+    }
+
+    @Test
     fun `renderPriority sorting`() {
         val e1 = createEffect(id = "low", priority = 10)
         val e2 = createEffect(id = "high", priority = 1)
@@ -152,10 +204,42 @@ class EffectManagerTest {
     }
 
     @Test
+    fun `clear isolates dispose failures`() {
+        val failing = createEffect(id = "failing")
+        val healthy = createEffect(id = "healthy")
+        every { failing.dispose() } throws IllegalStateException("dispose failed")
+        EffectManager.add(failing)
+        EffectManager.add(healthy)
+        EffectManager.update()
+
+        assertDoesNotThrow { EffectManager.clear() }
+
+        verify { failing.dispose() }
+        verify { healthy.dispose() }
+        assertEquals(0, EffectManager.size)
+    }
+
+    @Test
+    fun `clear session effects preserves persistent renderers`() {
+        val persistent = createEffect(id = "persistent")
+        val transient = createEffect(id = "transient")
+        EffectManager.addPersistent(persistent)
+        EffectManager.add(transient)
+        EffectManager.update()
+
+        EffectManager.clearSessionEffects()
+
+        assertTrue(EffectManager.exists("persistent"))
+        assertFalse(EffectManager.exists("transient"))
+        verify(exactly = 0) { persistent.dispose() }
+        verify { transient.dispose() }
+    }
+
+    @Test
     fun `clear disposes all effects`() {
         val e1 = createEffect(id = "a")
         val e2 = createEffect(id = "b")
-        EffectManager.add(e1)
+        EffectManager.addPersistent(e1)
         EffectManager.add(e2)
         EffectManager.update()
 

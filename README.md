@@ -20,9 +20,10 @@ Orryx Client 是一个基于 Minecraft Forge 1.12.2 的客户端模组，专为�
 
 提供三种瞄准模式，由服务端发起请求，客户端完成瞄准后将结果回传：
 
-- Point（点选模式）：选取单个目标实体
-- Direction（方向模式）：选取一个朝向方向
-- Area（区域模式）：选取一个区域范围
+- Point（点选模式）：选择视线命中的方块位置或最远落点
+- Direction（方向模式）：选择一个归一化朝向方向
+- Area（区域模式）：选择与画面指示器一致的区域中心点
+- 支持 Texture、Circle、Model 三种瞄准指示器，可配置颜色、透明度、半径与缩放
 
 ### Bloom — 泛光效果
 
@@ -57,10 +58,18 @@ Orryx Client 是一个基于 Minecraft Forge 1.12.2 的客户端模组，专为�
 - Square（矩形）：指定长宽范围
 - Sector（扇形）：指定半径和角度
 
+### Collider — 碰撞体线框
+
+服务端可创建、更新和移除客户端调试线框：
+
+- Sphere、AABB、OBB、Capsule、Ray
+- 支持有限深度的 Composite 组合碰撞体
+- 对坐标、尺寸、递归深度和总节点数执行安全校验
+
 ## 技术特性
 
 - 注解驱动的模块系统：`@Feature` 注解 + `FeatureBase` 基类，自动扫描注册
-- 自定义二进制网络协议：`orryxmod:main` 频道，17 种包类型，带安全限制
+- 自定义二进制网络协议：`orryxmod:main` 频道，20 种包类型，带有限值、长度、集合和递归预算限制
 - OpenGL Shader 管线：自定义 ShaderManager，管理 GLSL 着色器的编译、链接和渲染
 - Mixin 字节码注入：修改原版 HUD 渲染和 Baritone 设置
 - Kotlin 协程：异步处理耗时操作
@@ -68,10 +77,16 @@ Orryx Client 是一个基于 Minecraft Forge 1.12.2 的客户端模组，专为�
 
 ## 构建方式
 
-前置要求：JDK 8
+前置要求：JDK 17（构建运行时）；产物字节码仍兼容 Java 8。
 
 ```bash
-gradle shadowJar
+./gradlew shadowJar
+```
+
+独立单元测试构建使用 Gradle 8.9，并关闭构建缓存：
+
+```bash
+gradle --no-build-cache -b build-test.gradle test
 ```
 
 构建产物输出到 `builds/` 目录。
@@ -99,7 +114,7 @@ gradle shadowJar
 
 | 命令 | 说明 |
 |------|------|
-| `.aim [point\|dir\|area]` | 启动瞄准（点选/方向/区域模式） |
+| `.aim [point\|dir\|area] [texture\|model\|circle] [scale] [maxDist]` | 启动瞄准并选择指示器 |
 | `.cancelaim` | 取消瞄准 |
 
 ### Bloom
@@ -144,6 +159,21 @@ gradle shadowJar
 | `.shock [r]` | 圆形冲击波（默认半径 5） |
 | `.shock2 [l] [w]` | 矩形冲击波 |
 | `.shock3 [r] [angle]` | 扇形冲击波 |
+
+### Collider
+
+| 命令 | 说明 |
+|------|------|
+| `.collider sphere [radius]` | 创建球体线框 |
+| `.collider aabb [hx] [hy] [hz]` | 创建轴对齐盒线框 |
+| `.collider obb [hx] [hy] [hz]` | 创建带朝向的盒线框 |
+| `.collider capsule [radius] [halfHeight]` | 创建胶囊体线框 |
+| `.collider ray [length]` | 创建视线射线 |
+| `.collider clear` | 清除所有碰撞体线框 |
+
+## 服务端插件对接
+
+完整频道、数据包字段、限制与 Collider wire ID 说明见 [`docs/Plugin-Integration.md`](docs/Plugin-Integration.md)。
 
 ## 开发依赖
 
