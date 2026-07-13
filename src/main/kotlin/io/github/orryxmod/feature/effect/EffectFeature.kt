@@ -14,6 +14,7 @@ import net.minecraftforge.common.MinecraftForge
 import net.minecraftforge.fml.common.eventhandler.SubscribeEvent
 import net.minecraftforge.fml.common.gameevent.TickEvent
 import org.joml.Vector3d
+import java.util.ArrayDeque
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 
@@ -28,14 +29,47 @@ object EffectFeature : FeatureBase() {
     // Ghost 效果列表
     private val ghostEffects = ConcurrentHashMap<UUID, GhostEffect>()
 
-    // Flicker 效果列表
-    private val flickerEffects = mutableListOf<FlickerEffect>()
+    object Config {
+        var maxFlickerEffects: Int = 20
+
+        var maxTrackerEntries: Int
+            get() = EntityTrackerRegistry.currentLimits.maxEntries
+            set(value) {
+                EntityTrackerRegistry.configureLimits(
+                    EntityTrackerRegistry.currentLimits.copy(maxEntries = value)
+                )
+            }
+
+        var maxTrackerSamplesPerEntity: Int
+            get() = EntityTrackerRegistry.currentLimits.maxSamplesPerEntity
+            set(value) {
+                EntityTrackerRegistry.configureLimits(
+                    EntityTrackerRegistry.currentLimits.copy(maxSamplesPerEntity = value)
+                )
+            }
+
+        var maxCachedFlickerGeometries: Int
+            get() = FlickerGeometryCache.currentLimits.maxCachedGeometries
+            set(value) {
+                FlickerGeometryCache.configureLimits(
+                    FlickerGeometryCache.currentLimits.copy(maxCachedGeometries = value)
+                )
+            }
+
+        var flickerGeometryTtlMillis: Long
+            get() = FlickerGeometryCache.currentLimits.unusedTtlMillis
+            set(value) {
+                FlickerGeometryCache.configureLimits(
+                    FlickerGeometryCache.currentLimits.copy(unusedTtlMillis = value)
+                )
+            }
+    }
+
+    // Flicker 效果队列
+    private val flickerEffects = ArrayDeque<FlickerEffect>()
 
     // EntityShow 效果（按 UUID 管理）
     private val entityShowEffects = ConcurrentHashMap<UUID, EntityShowEffect>()
-
-    // 最大 Flicker 效果数量
-    private const val MAX_FLICKERS = 20
 
     override fun enable() {
         if (enabled) return
@@ -60,13 +94,24 @@ object EffectFeature : FeatureBase() {
     @SubscribeEvent
     fun onTick(event: TickEvent.ClientTickEvent) {
         if (event.phase != TickEvent.Phase.END) return
-        if (MC.world == null || MC.isGamePaused) return
+        if (MC.world == null) {
+            EntityTrackerRegistry.clear()
+            return
+        }
+        if (MC.isGamePaused) return
 
         // 更新 EntityTracker
         EntityTrackerRegistry.tick()
 
-        // 清理过期的 Ghost 效果
-        ghostEffects.entries.removeIf { !it.value.isActive }
+        // 清理过期的 Ghost 效果及其追踪条目
+        ghostEffects.entries.removeIf { entry ->
+            if (!entry.value.isActive) {
+                entry.value.dispose()
+                true
+            } else {
+                false
+            }
+        }
 
         // 清理过期的 Flicker 效果（释放 Display List 资源）
         flickerEffects.removeIf { effect ->
@@ -77,6 +122,7 @@ object EffectFeature : FeatureBase() {
                 false
             }
         }
+        FlickerGeometryCache.trim()
 
         // 更新 EntityShow 效果
         entityShowEffects.values.forEach { it.update() }
@@ -162,10 +208,15 @@ object EffectFeature : FeatureBase() {
      * 应用 Ghost 效果
      */
     fun applyGhost(uuid: UUID, timeout: Long, config: GhostConfig = GhostConfig()) {
-        // 移除过期的效果
-        ghostEffects.filterValues { !it.isActive }.forEach { (k, _) -> ghostEffects.remove(k) }
-        // 添加新效果
-        ghostEffects[uuid] = GhostEffect(uuid, timeout, config)
+        ghostEffects.entries.removeIf { entry ->
+            if (!entry.value.isActive) {
+                entry.value.dispose()
+                true
+            } else {
+                false
+            }
+        }
+        ghostEffects.put(uuid, GhostEffect(uuid, timeout, config))?.dispose()
     }
 
     /**
@@ -183,14 +234,15 @@ object EffectFeature : FeatureBase() {
         }
 
         // 限制效果数量（释放最旧的 Display List）
-        if (flickerEffects.size >= MAX_FLICKERS) {
+        val maxFlickerEffects = Config.maxFlickerEffects.coerceIn(1, 64)
+        if (flickerEffects.size >= maxFlickerEffects) {
             disposeFlicker(flickerEffects.removeFirst())
         }
 
         // 创建并初始化效果
         val effect = FlickerEffect(uuid, timeout, config)
         effect.initTracker()
-        flickerEffects.add(effect)
+        flickerEffects.addLast(effect)
     }
 
     /**
@@ -236,9 +288,11 @@ object EffectFeature : FeatureBase() {
     }
 
     private fun clearEffects() {
+        ghostEffects.values.forEach(GhostEffect::dispose)
         ghostEffects.clear()
         flickerEffects.forEach(::disposeFlicker)
         flickerEffects.clear()
+        FlickerGeometryCache.clear()
         entityShowEffects.values.forEach { it.clearAllShadows() }
         entityShowEffects.clear()
         EntityTrackerRegistry.clear()

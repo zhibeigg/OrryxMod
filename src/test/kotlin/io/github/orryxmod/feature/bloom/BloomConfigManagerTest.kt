@@ -79,6 +79,35 @@ class BloomConfigManagerTest {
     }
 
     @Test
+    fun `cached misses are invalidated when config changes`() {
+        assertNull(BloomConfigManager.findConfig("Zombie King"))
+
+        BloomConfigManager.update("zombie", config("Zombie", priority = 2))
+
+        assertEquals("Zombie", BloomConfigManager.findConfig("Zombie King")?.name)
+    }
+
+    @Test
+    fun `findMatch preserves candidate name order and stable group id`() {
+        BloomConfigManager.update("display", config("Display", priority = 10))
+        BloomConfigManager.update("base", config("Base", priority = 1))
+
+        val result = BloomConfigManager.findMatch("Base Entity", "Display Entity")
+
+        assertNotNull(result)
+        assertEquals("base", result!!.groupKey)
+        assertEquals("Base", result.config.name)
+    }
+
+    @Test
+    fun `equal priority matches use stable config id ordering`() {
+        BloomConfigManager.update("z-last", config("mob", priority = 5))
+        BloomConfigManager.update("a-first", config("mob", priority = 5))
+
+        assertEquals("a-first", BloomConfigManager.findMatch("mob")?.groupKey)
+    }
+
+    @Test
     fun `BloomConfig equals with IntArray`() {
         val a = BloomConfig("test", intArrayOf(1, 2, 3, 4), 1f, 32f, 0)
         val b = BloomConfig("test", intArrayOf(1, 2, 3, 4), 1f, 32f, 0)

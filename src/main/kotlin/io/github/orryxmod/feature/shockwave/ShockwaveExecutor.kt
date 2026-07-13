@@ -12,366 +12,547 @@ import net.minecraft.world.World
 import org.joml.Quaternionf
 import org.joml.Vector3d
 import org.joml.Vector3f
-import kotlin.math.*
+import java.util.ArrayDeque
+import kotlin.math.abs
+import kotlin.math.ceil
+import kotlin.math.cos
+import kotlin.math.floor
+import kotlin.math.max
+import kotlin.math.min
+import kotlin.math.roundToInt
+import kotlin.math.sin
+import kotlin.math.sqrt
 
 /**
- * 冲击波执行器
- * 从老模块 modules/fractureblock/Shockwave.kt 迁移完整算法
+ * 冲击波执行器。所有世界读取与修改均由客户端主线程的 tick 分批完成。
  */
 object ShockwaveExecutor {
 
-    // 冲击波方向 (向下)
-    private val IMPACT_DIRECTION = Vector3d(0.0, -1.0, 0.0)
+    private const val MIN_VECTOR_LENGTH_SQUARED = 1e-7
+
+    private val pendingTasks = ArrayDeque<ShockwaveTask>()
+    private var taskWorld: World? = null
 
     /**
-     * 执行冲击波 - 使用新的 DSL 配置（保留兼容性）
+     * 校验起点并将冲击波加入主线程队列。
      */
     fun execute(world: World, config: ShockwaveConfig): Boolean {
-        return when (val shape = config.shape) {
-            is CircleShape -> circleSlamFracture(world, shape.center, shape.radius)
-            is SquareShape -> squareSlamFracture(world, shape.center, shape.length, shape.width, shape.yaw)
-            is SectorShape -> sectorSlamFracture(world, shape.center, shape.radius, shape.angle, shape.yaw)
+        val center = adjustCenterToGrid(config.shape.center) ?: return false
+        val originPos = BlockPos(center.x, center.y, center.z)
+        val originState = world.getBlockState(originPos)
+        if (!canTransferShockwave(world, originPos, originState)) return false
+
+        val raySource = createRaySource(config.shape, center) ?: return false
+        if (taskWorld !== null && taskWorld !== world) clear()
+
+        val maxQueuedTasks = config.performance.maxQueuedTasks.coerceIn(0, 32)
+        if (maxQueuedTasks == 0 || pendingTasks.size >= maxQueuedTasks) {
+            OrryxMod.logger.warn("[Shockwave] Task queue limit reached ($maxQueuedTasks), rejecting effect")
+            return false
         }
+
+        taskWorld = world
+        pendingTasks.addLast(ShockwaveTask(world, config, center, raySource))
+        return true
     }
 
     /**
-     * 圆形冲击波
+     * 每个客户端 tick 只处理一个任务批次，避免多个冲击波叠加突破单 tick 预算。
      */
+    fun processTick(world: World?) {
+        if (world == null) {
+            clear()
+            return
+        }
+        if (taskWorld !== null && taskWorld !== world) {
+            clear()
+            return
+        }
+
+        val task = pendingTasks.pollFirst() ?: return
+        if (task.world !== world) return
+        if (!task.processBatch()) pendingTasks.addLast(task)
+        if (pendingTasks.isEmpty()) taskWorld = null
+    }
+
+    fun clear() {
+        pendingTasks.clear()
+        taskWorld = null
+    }
+
     fun circleSlamFracture(x: Double, y: Double, z: Double, radius: Double): Boolean {
         val world = MC.world ?: return false
         return circleSlamFracture(world, Vector3d(x, y, z), radius)
     }
 
-    fun circleSlamFracture(world: World, center: Vector3d, radius: Double): Boolean {
-        val effectiveRadius = max(0.5, radius)
-        val adjustedCenter = adjustCenterToGrid(center)
+    fun circleSlamFracture(world: World, center: Vector3d, radius: Double): Boolean =
+        execute(world, ShockwaveConfig(CircleShape(center, radius)))
 
-        val blockPos = BlockPos(adjustedCenter.x, adjustedCenter.y, adjustedCenter.z)
-        val originBlockState = world.getBlockState(blockPos)
-
-        if (!canTransferShockwave(world, blockPos, originBlockState)) {
-            return false
-        }
-
-        val xFrom = floor(adjustedCenter.x - effectiveRadius).toInt()
-        val xTo = ceil(adjustedCenter.x + effectiveRadius).toInt()
-        val zFrom = floor(adjustedCenter.z - effectiveRadius).toInt()
-        val zTo = ceil(adjustedCenter.z + effectiveRadius).toInt()
-
-        // 遍历正方形边缘
-        for (i in zFrom..zTo) {
-            var j = xFrom
-            while (j <= xTo) {
-                // 得到径向向外扩散向量
-                val direction = Vector3d(j - adjustedCenter.x + 0.1, 0.0, i - adjustedCenter.z)
-                spreadShockwave(world, adjustedCenter, direction, effectiveRadius, j, i)
-                j += if (i == zFrom || i == zTo) 1 else xTo - xFrom
-            }
-        }
-
-        return true
-    }
-
-    /**
-     * 方形冲击波
-     */
     fun squareSlamFracture(x: Double, y: Double, z: Double, length: Double, width: Double, yaw: Double): Boolean {
         val world = MC.world ?: return false
         return squareSlamFracture(world, Vector3d(x, y, z), length, width, yaw)
     }
 
-    fun squareSlamFracture(world: World, center: Vector3d, length: Double, width: Double, yaw: Double): Boolean {
-        val effectiveLength = max(0.5, length)
-        val effectiveWidth = max(0.5, width)
-        val adjustedCenter = adjustCenterToGrid(center)
+    fun squareSlamFracture(
+        world: World,
+        center: Vector3d,
+        length: Double,
+        width: Double,
+        yaw: Double
+    ): Boolean = execute(world, ShockwaveConfig(SquareShape(center, length, width, yaw)))
 
-        val blockPos = BlockPos(adjustedCenter.x, adjustedCenter.y, adjustedCenter.z)
-        val originBlockState = world.getBlockState(blockPos)
-
-        if (!canTransferShockwave(world, blockPos, originBlockState)) {
-            return false
-        }
-
-        // 扩散方向
-        val direction = Vector3d(0.0, 0.0, 1.0).rotateY(Math.toRadians(-yaw))
-        // 左右偏移方向
-        val offsetDir = Vector3d(0.0, 1.0, 0.0).cross(direction)
-
-        val offsetL = (-effectiveWidth / 2).toInt()
-        val offsetR = (effectiveWidth / 2).toInt()
-
-        for (i in offsetL..offsetR) {
-            val newCenter = adjustedCenter.add(offsetDir.normalize(i.toDouble(), Vector3d()), Vector3d())
-            val edge = newCenter.add(direction.normalize(effectiveLength, Vector3d()), Vector3d())
-            spreadShockwave(world, newCenter, direction, effectiveLength, edge.x.toInt(), edge.z.toInt())
-        }
-
-        return true
-    }
-
-    /**
-     * 扇形冲击波
-     */
     fun sectorSlamFracture(x: Double, y: Double, z: Double, radius: Double, angle: Double, yaw: Double): Boolean {
         val world = MC.world ?: return false
         return sectorSlamFracture(world, Vector3d(x, y, z), radius, angle, yaw)
     }
 
-    fun sectorSlamFracture(world: World, center: Vector3d, radius: Double, angle: Double, yaw: Double): Boolean {
-        val effectiveRadius = max(0.5, radius)
-        val adjustedCenter = adjustCenterToGrid(center)
-
-        val blockPos = BlockPos(adjustedCenter.x, adjustedCenter.y, adjustedCenter.z)
-        val originBlockState = world.getBlockState(blockPos)
-
-        if (!canTransferShockwave(world, blockPos, originBlockState)) {
-            return false
-        }
-
-        // 扩散中线方向
-        val midDirection = Vector3d(0.0, 0.0, 1.0).rotateY(Math.toRadians(-yaw))
-
-        val xFrom = floor(adjustedCenter.x - effectiveRadius).toInt()
-        val xTo = ceil(adjustedCenter.x + effectiveRadius).toInt()
-        val zFrom = floor(adjustedCenter.z - effectiveRadius).toInt()
-        val zTo = ceil(adjustedCenter.z + effectiveRadius).toInt()
-
-        // 遍历正方形边缘
-        for (i in zFrom..zTo) {
-            var j = xFrom
-            while (j <= xTo) {
-                // 得到径向向外扩散向量
-                val direction = Vector3d(j - adjustedCenter.x + 0.1, 0.0, i - adjustedCenter.z)
-                if (direction.angle(midDirection) <= Math.toRadians(angle / 2)) {
-                    spreadShockwave(world, adjustedCenter, direction, effectiveRadius, j, i)
-                }
-                j += if (i == zFrom || i == zTo) 1 else xTo - xFrom
-            }
-        }
-
-        return true
-    }
-
-    /**
-     * 调整中心点到网格
-     */
-    private fun adjustCenterToGrid(center: Vector3d): Vector3d {
-        val closestEdge = Vector3d(
-            center.x.roundToInt().toDouble(),
-            floor(center.y),
-            center.z.roundToInt().toDouble()
-        )
-        val centerOfBlock = Vector3d(
-            floor(center.x) + 0.5,
-            floor(center.y),
-            floor(center.z) + 0.5
-        )
-
-        return if (closestEdge.distanceSquared(center) < centerOfBlock.distanceSquared(center)) {
-            closestEdge
-        } else {
-            centerOfBlock
-        }
-    }
-
-    /**
-     * 扩散冲击波效果
-     */
-    private fun spreadShockwave(
+    fun sectorSlamFracture(
         world: World,
         center: Vector3d,
-        direction: Vector3d,
-        length: Double,
-        edgeX: Int,
-        edgeZ: Int
+        radius: Double,
+        angle: Double,
+        yaw: Double
+    ): Boolean = execute(world, ShockwaveConfig(SectorShape(center, radius, angle, yaw)))
+
+    private data class GridCenter(val x: Double, val y: Double, val z: Double)
+
+    private data class ShockwaveRay(
+        val originX: Double,
+        val originZ: Double,
+        val directionX: Double,
+        val directionZ: Double,
+        val length: Double
+    )
+
+    private data class PlanarNode(val x: Int, val z: Int)
+
+    private interface RaySource {
+        fun nextRay(): ShockwaveRay?
+    }
+
+    private class BoundaryRaySource(
+        private val center: GridCenter,
+        private val length: Double,
+        private val xFrom: Int,
+        private val xTo: Int,
+        private val zFrom: Int,
+        private val zTo: Int,
+        private val acceptsDirection: (Double, Double) -> Boolean
+    ) : RaySource {
+        private var x = xFrom
+        private var z = zFrom
+        private var finished = false
+
+        override fun nextRay(): ShockwaveRay? {
+            while (!finished) {
+                val edgeX = x
+                val edgeZ = z
+                advance()
+
+                val directionX = edgeX - center.x + 0.1
+                val directionZ = edgeZ - center.z
+                if (!acceptsDirection(directionX, directionZ)) continue
+                return ShockwaveRay(
+                    center.x,
+                    center.z,
+                    directionX,
+                    directionZ,
+                    length
+                )
+            }
+            return null
+        }
+
+        private fun advance() {
+            val fullRow = z == zFrom || z == zTo
+            if (fullRow && x < xTo) {
+                x++
+                return
+            }
+            if (!fullRow && x == xFrom && xTo != xFrom) {
+                x = xTo
+                return
+            }
+            if (z == zTo) {
+                finished = true
+                return
+            }
+            z++
+            x = xFrom
+        }
+    }
+
+    private class SquareRaySource(
+        private val center: GridCenter,
+        private val length: Double,
+        width: Double,
+        yaw: Double
+    ) : RaySource {
+        private val yawRadians = Math.toRadians(yaw)
+        private val directionX = -sin(yawRadians)
+        private val directionZ = cos(yawRadians)
+        private val offsetX = directionZ
+        private val offsetZ = -directionX
+        private val offsetRight = (width / 2.0).toInt()
+        private var offset = (-width / 2.0).toInt()
+        private var finished = false
+
+        override fun nextRay(): ShockwaveRay? {
+            if (finished) return null
+            val currentOffset = offset
+            if (offset == offsetRight) finished = true else offset++
+
+            val originX = center.x + offsetX * currentOffset
+            val originZ = center.z + offsetZ * currentOffset
+            return ShockwaveRay(originX, originZ, directionX, directionZ, length)
+        }
+    }
+
+    /**
+     * 使用 Bresenham 游标按从近到远顺序遍历射线经过的方块。
+     * 每条射线仅产生 O(length) 个节点，避免扫描整块矩形并排序。
+     */
+    private class RayWork(val ray: ShockwaveRay, centerY: Int) {
+        private val directionLengthSquared =
+            ray.directionX * ray.directionX + ray.directionZ * ray.directionZ
+        private val directionScale = if (directionLengthSquared < MIN_VECTOR_LENGTH_SQUARED) {
+            0.0
+        } else {
+            ray.length / sqrt(directionLengthSquared)
+        }
+        private val endX = floor(ray.originX + ray.directionX * directionScale).toInt()
+        private val endZ = floor(ray.originZ + ray.directionZ * directionScale).toInt()
+
+        private var cursorX = floor(ray.originX).toInt()
+        private var cursorZ = floor(ray.originZ).toInt()
+        private val deltaX = abs(endX - cursorX)
+        private val deltaZ = abs(endZ - cursorZ)
+        private val stepX = when {
+            cursorX < endX -> 1
+            cursorX > endX -> -1
+            else -> 0
+        }
+        private val stepZ = when {
+            cursorZ < endZ -> 1
+            cursorZ > endZ -> -1
+            else -> 0
+        }
+        private var error = deltaX - deltaZ
+        private var finished = false
+
+        var currentY = centerY
+
+        fun hasRemainingNodes(): Boolean = !finished
+
+        fun nextNode(): PlanarNode {
+            check(!finished) { "Shockwave ray is already exhausted" }
+            val node = PlanarNode(cursorX, cursorZ)
+
+            if (cursorX == endX && cursorZ == endZ) {
+                finished = true
+                return node
+            }
+
+            val doubledError = error * 2
+            if (doubledError > -deltaZ) {
+                error -= deltaZ
+                cursorX += stepX
+            }
+            if (doubledError < deltaX) {
+                error += deltaX
+                cursorZ += stepZ
+            }
+            return node
+        }
+
+        fun discardRemainingNodes() {
+            finished = true
+        }
+    }
+
+    private data class PendingParticles(
+        val pos: BlockPos,
+        val stateId: Int,
+        var remaining: Int
+    )
+
+    private enum class NodeResult {
+        SKIPPED,
+        FRACTURED,
+        END_RAY
+    }
+
+    private class ShockwaveTask(
+        val world: World,
+        private val config: ShockwaveConfig,
+        private val center: GridCenter,
+        private val raySource: RaySource
     ) {
-        // 计算冲击波边缘点
-        val normalizedDir = direction.normalize(length, Vector3d())
-        val edgeOfShockwave = center.add(normalizedDir, Vector3d())
+        private val performance = config.performance
+        private val maxPropagationNodes = performance.maxPropagationNodes.coerceIn(0, 65_536)
+        private val maxFractureBlocks = performance.maxFractureBlocks.coerceIn(0, 1_024)
+        private val maxActiveFractureBlocks = performance.maxActiveFractureBlocks.coerceIn(0, 2_048)
+        private val maxParticles = performance.maxParticles.coerceIn(0, 4_096)
+        private val propagationNodesPerTick = performance.propagationNodesPerTick.coerceIn(1, 2_048)
+        private val fractureBlocksPerTick = performance.fractureBlocksPerTick.coerceIn(1, 64)
+        private val particlesPerTick = performance.particlesPerTick.coerceIn(1, 256)
+        private val centerY = center.y.toInt()
 
-        // 计算影响区域边界
-        val xFrom = min(floor(center.x).toInt(), edgeX)
-        val xTo = max(floor(center.x).toInt(), edgeX)
-        val zFrom = min(floor(center.z).toInt(), edgeZ)
-        val zTo = max(floor(center.z).toInt(), edgeZ)
+        private var currentRay: RayWork? = null
+        private var propagationNodes = 0
+        private var fractureBlocks = 0
+        private var particles = 0
+        private var pendingParticles: PendingParticles? = null
 
-        // 计算弹跳系数
-        val bounceExponentCoef = min(1.0 / (length * length), 0.1)
+        fun processBatch(): Boolean {
+            var nodeBudget = propagationNodesPerTick
+            var fractureBudget = fractureBlocksPerTick
+            var particleBudget = particlesPerTick
 
-        // 收集受影响的方块坐标
-        val affectedBlocks = mutableListOf<BlockPos>()
-        for (z in zFrom..zTo) {
-            for (x in xFrom..xTo) {
-                val blockCenter = Vector3d(x + 0.5, center.y, z + 0.5)
-                if (isBlockOverlapLine(blockCenter, center, edgeOfShockwave)) {
-                    affectedBlocks.add(BlockPos(x, center.y.toInt(), z))
+            while (true) {
+                val pending = pendingParticles
+                if (pending != null) {
+                    while (pending.remaining > 0 && particles < maxParticles && particleBudget > 0) {
+                        spawnBreakParticle(world, pending.pos, pending.stateId, config.particles.velocityMultiplier)
+                        pending.remaining--
+                        particles++
+                        particleBudget--
+                    }
+                    if (pending.remaining > 0 && particles < maxParticles) return false
+                    pendingParticles = null
                 }
+
+                if (fractureBlocks >= maxFractureBlocks ||
+                    propagationNodes >= maxPropagationNodes ||
+                    OrryxMod.fractureBlock.blockNodes.size >= maxActiveFractureBlocks
+                ) {
+                    return pendingParticles == null
+                }
+
+                var work = currentRay
+                if (work == null) {
+                    val ray = raySource.nextRay() ?: return true
+                    work = RayWork(ray, centerY)
+                    currentRay = work
+                }
+
+                while (work.hasRemainingNodes()) {
+                    if (nodeBudget <= 0 || fractureBudget <= 0) return false
+
+                    val result = processNode(work)
+                    propagationNodes++
+                    nodeBudget--
+
+                    when (result) {
+                        NodeResult.SKIPPED -> Unit
+                        NodeResult.END_RAY -> {
+                            work.discardRemainingNodes()
+                            break
+                        }
+                        NodeResult.FRACTURED -> {
+                            fractureBlocks++
+                            fractureBudget--
+                            queueParticlesIfNeeded()
+                            if (pendingParticles != null) break
+                            if (fractureBlocks >= maxFractureBlocks) break
+                        }
+                    }
+
+                    if (propagationNodes >= maxPropagationNodes) break
+                }
+
+                if (pendingParticles != null) continue
+                if (!work.hasRemainingNodes()) currentRay = null
+                if (nodeBudget <= 0 || fractureBudget <= 0) return false
             }
         }
 
-        // 按距离中心点距离排序 (由近到远)
-        affectedBlocks.sortBy { pos ->
-            (pos.x - center.x).pow(2) + (pos.z - center.z).pow(2)
-        }
-
-        // 处理每个受影响方块
-        var currentY = center.y.toInt()
-        for (pos in affectedBlocks) {
-            var finalPos = BlockPos(pos.x, currentY, pos.z)
+        private fun processNode(work: RayWork): NodeResult {
+            val node = work.nextNode()
+            var finalPos = BlockPos(node.x, work.currentY, node.z)
             var state = world.getBlockState(finalPos)
 
-            if (state.block === OrryxMod.fractureBlock) continue
+            if (state.block === OrryxMod.fractureBlock) return NodeResult.SKIPPED
 
-            // 处理方块上方传递
             val abovePos = finalPos.up()
             val aboveState = world.getBlockState(abovePos)
-
             if (canTransferShockwave(world, abovePos, aboveState)) {
                 val aboveTwoPos = abovePos.up()
                 val aboveTwoState = world.getBlockState(aboveTwoPos)
-
                 if (!canTransferShockwave(world, aboveTwoPos, aboveTwoState)) {
-                    currentY++
+                    work.currentY++
                     finalPos = abovePos
                     state = aboveState
                 } else {
-                    break
+                    return NodeResult.END_RAY
                 }
             }
 
-            // 处理方块下方传递
             if (!canTransferShockwave(world, finalPos, state)) {
                 val belowPos = finalPos.down()
                 val belowState = world.getBlockState(belowPos)
-
                 if (canTransferShockwave(world, belowPos, belowState)) {
-                    currentY--
+                    work.currentY--
                     finalPos = belowPos
                     state = belowState
                 } else {
-                    break
+                    return NodeResult.END_RAY
                 }
             }
 
-            // 距离检查
-            val blockCenter = Vector3d(finalPos.x + 0.5, finalPos.y.toDouble(), finalPos.z + 0.5)
-            val centerToBlock = blockCenter.sub(center, Vector3d())
-            val distance = centerToBlock.length()
-
-            if (distance > length) continue
-
-            // 客户端渲染断裂效果
-            if (world.isRemote) {
-                if (!canTransferShockwave(world, finalPos, state) || hasTileEntity(world, finalPos, state)) {
-                    continue
-                }
-
-                // 计算旋转轴 (当 distance 接近 0 时使用默认轴)
-                val axis: Vector3f = if (distance < 0.01) {
-                    // 中心方块：使用随机轴避免除零
-                    Vector3f(
-                        world.rand.nextFloat() - 0.5f,
-                        0f,
-                        world.rand.nextFloat() - 0.5f
-                    ).normalize()
-                } else {
-                    val rotAxis = IMPACT_DIRECTION.cross(centerToBlock, Vector3d()).normalize()
-                    Vector3f(rotAxis.x.toFloat(), rotAxis.y.toFloat(), rotAxis.z.toFloat())
-                }
-
-                // 计算位移和旋转
-                val translator = Vector3f(
-                    0f,
-                    max(0f, (distance / length).toFloat() - 0.5f) * 0.8f,
-                    0f
-                )
-
-                // 创建旋转四元数
-                val rotator = Quaternionf().rotateAxis(
-                    ((distance.toFloat() / length.toFloat()) * 15.0f + world.rand.nextFloat() * 10.0f - 5.0f).toRadians(),
-                    axis
-                )
-
-                // 添加随机旋转
-                rotator.rotateX((world.rand.nextFloat() * 15.0f - 7.5f).toRadians())
-                rotator.rotateY((world.rand.nextFloat() * 40.0f - 20.0f).toRadians())
-                rotator.rotateZ((world.rand.nextFloat() * 15.0f - 7.5f).toRadians())
-
-                // 计算弹跳效果
-                val bouncing = distance.pow(2) * bounceExponentCoef
-                val lifetime = (length * 20).toInt() + world.rand.nextInt(30)
-
-                // 创建断裂效果
-                createFractureEffect(world, finalPos, state, translator, rotator, bouncing, lifetime)
-
-                // 生成粒子
-                spawnBreakParticles(world, finalPos, state)
+            val dx = finalPos.x + 0.5 - work.ray.originX
+            val dy = finalPos.y - center.y
+            val dz = finalPos.z + 0.5 - work.ray.originZ
+            val distanceSquared = dx * dx + dy * dy + dz * dz
+            val lengthSquared = work.ray.length * work.ray.length
+            if (distanceSquared > lengthSquared || !world.isRemote || hasTileEntity(world, finalPos, state)) {
+                return NodeResult.SKIPPED
             }
-        }
-    }
 
-    /**
-     * 检查方块是否与线段重叠
-     */
-    private fun isBlockOverlapLine(
-        blockCenter: Vector3d,
-        lineStart: Vector3d,
-        lineEnd: Vector3d
-    ): Boolean {
-        val lineVec = lineEnd.sub(lineStart, Vector3d())
-        val pointVec = blockCenter.sub(lineStart, Vector3d())
-        val lineLengthSquared = lineVec.lengthSquared()
-
-        if (lineLengthSquared < 1e-7) {
-            return blockCenter.distanceSquared(lineStart) < 0.7 * 0.7
-        }
-
-        val t = max(0.0, min(1.0, pointVec.dot(lineVec) / lineLengthSquared))
-        val projection = lineStart.add(lineVec.mul(t, Vector3d()), Vector3d())
-
-        val distanceSquared = blockCenter.distanceSquared(projection)
-        return distanceSquared < 0.7 * 0.7
-    }
-
-    /**
-     * 能否传递冲击波
-     */
-    private fun canTransferShockwave(world: World, pos: BlockPos, state: IBlockState): Boolean {
-        return state.isOpaqueCube && !state.block.isAir(state, world, pos)
-    }
-
-    /**
-     * 跳过任何已有或声明了 TileEntity 的方块，避免恢复时丢失 NBT。
-     */
-    private fun hasTileEntity(world: World, pos: BlockPos, state: IBlockState): Boolean {
-        return world.getTileEntity(pos) != null || state.block.hasTileEntity(state)
-    }
-
-    /**
-     * 生成方块破坏粒子
-     */
-    private fun spawnBreakParticles(world: World, pos: BlockPos, state: IBlockState) {
-        repeat(8) {
-            val offsetX = world.rand.nextDouble()
-            val offsetY = world.rand.nextDouble() * 0.5 + 1
-            val offsetZ = world.rand.nextDouble()
-
-            world.spawnParticle(
-                EnumParticleTypes.BLOCK_CRACK,
-                pos.x + offsetX,
-                pos.y + offsetY,
-                pos.z + offsetZ,
-                (offsetX - 0.5) * 0.5,
-                (offsetY - 0.75) * 0.5,
-                (offsetZ - 0.5) * 0.5,
-                Block.getStateId(state)
+            val distance = sqrt(distanceSquared)
+            val axis = createRotationAxis(world, dx, dz)
+            val length = work.ray.length
+            val distanceRatio = if (length <= 0.0) 0f else (distance / length).toFloat()
+            val translator = Vector3f(0f, max(0f, distanceRatio - 0.5f) * 0.8f, 0f)
+            val rotationConfig = config.fracture.rotation
+            val rotator = Quaternionf().rotateAxis(
+                (distanceRatio * rotationConfig.baseTilt +
+                    world.rand.nextFloat() * rotationConfig.tiltVariance * 2f - rotationConfig.tiltVariance).toRadians(),
+                axis
             )
+            rotator.rotateX(randomSigned(world, rotationConfig.rollVariance).toRadians())
+            rotator.rotateY(randomSigned(world, rotationConfig.yawVariance).toRadians())
+            rotator.rotateZ(randomSigned(world, rotationConfig.rollVariance).toRadians())
+
+            val bounceCoefficient = min(
+                if (lengthSquared <= 0.0) config.fracture.bounceMultiplier else 1.0 / lengthSquared,
+                config.fracture.bounceMultiplier.coerceAtLeast(0.0)
+            )
+            val bouncing = distanceSquared * bounceCoefficient
+            val variance = config.fracture.lifetimeVariance.coerceAtLeast(0)
+            val lifetime = config.fracture.baseLifetime.coerceAtLeast(1) +
+                if (variance == 0) 0 else world.rand.nextInt(variance)
+
+            return if (createFractureEffect(world, finalPos, state, translator, rotator, bouncing, lifetime)) {
+                lastFracturedPos = finalPos
+                lastFracturedState = state
+                NodeResult.FRACTURED
+            } else {
+                NodeResult.SKIPPED
+            }
+        }
+
+        private var lastFracturedPos: BlockPos? = null
+        private var lastFracturedState: IBlockState? = null
+
+        private fun queueParticlesIfNeeded() {
+            if (!config.particles.enabled || config.particles.density <= 0 || particles >= maxParticles) return
+            val pos = lastFracturedPos ?: return
+            val state = lastFracturedState ?: return
+            val count = min(config.particles.density, maxParticles - particles)
+            if (count > 0) pendingParticles = PendingParticles(pos, Block.getStateId(state), count)
         }
     }
 
-    /**
-     * 创建断裂效果
-     */
+    private fun createRaySource(shape: Shape, center: GridCenter): RaySource? {
+        return when (shape) {
+            is CircleShape -> {
+                if (!shape.radius.isFinite()) return null
+                val radius = max(0.5, shape.radius)
+                boundarySource(center, radius) { _, _ -> true }
+            }
+            is SquareShape -> {
+                if (!shape.length.isFinite() || !shape.width.isFinite() || !shape.yaw.isFinite()) return null
+                SquareRaySource(center, max(0.5, shape.length), max(0.5, shape.width), shape.yaw)
+            }
+            is SectorShape -> {
+                if (!shape.radius.isFinite() || !shape.angle.isFinite() || !shape.yaw.isFinite()) return null
+                val radius = max(0.5, shape.radius)
+                val halfAngle = Math.toRadians(shape.angle.coerceIn(0.0, 360.0) / 2.0)
+                val yawRadians = Math.toRadians(shape.yaw)
+                val midX = -sin(yawRadians)
+                val midZ = cos(yawRadians)
+                val minimumDot = cos(halfAngle)
+                boundarySource(center, radius) { directionX, directionZ ->
+                    val lengthSquared = directionX * directionX + directionZ * directionZ
+                    lengthSquared >= MIN_VECTOR_LENGTH_SQUARED &&
+                        directionX * midX + directionZ * midZ >= minimumDot * sqrt(lengthSquared)
+                }
+            }
+        }
+    }
+
+    private fun boundarySource(
+        center: GridCenter,
+        radius: Double,
+        acceptsDirection: (Double, Double) -> Boolean
+    ): RaySource {
+        val xFrom = floor(center.x - radius).toInt()
+        val xTo = ceil(center.x + radius).toInt()
+        val zFrom = floor(center.z - radius).toInt()
+        val zTo = ceil(center.z + radius).toInt()
+        return BoundaryRaySource(center, radius, xFrom, xTo, zFrom, zTo, acceptsDirection)
+    }
+
+    private fun adjustCenterToGrid(center: Vector3d): GridCenter? {
+        if (!center.x.isFinite() || !center.y.isFinite() || !center.z.isFinite()) return null
+
+        val closestEdgeX = center.x.roundToInt().toDouble()
+        val closestEdgeY = floor(center.y)
+        val closestEdgeZ = center.z.roundToInt().toDouble()
+        val blockCenterX = floor(center.x) + 0.5
+        val blockCenterZ = floor(center.z) + 0.5
+
+        val edgeDx = closestEdgeX - center.x
+        val edgeDz = closestEdgeZ - center.z
+        val blockDx = blockCenterX - center.x
+        val blockDz = blockCenterZ - center.z
+        return if (edgeDx * edgeDx + edgeDz * edgeDz < blockDx * blockDx + blockDz * blockDz) {
+            GridCenter(closestEdgeX, closestEdgeY, closestEdgeZ)
+        } else {
+            GridCenter(blockCenterX, closestEdgeY, blockCenterZ)
+        }
+    }
+
+    private fun canTransferShockwave(world: World, pos: BlockPos, state: IBlockState): Boolean =
+        state.isOpaqueCube && !state.block.isAir(state, world, pos)
+
+    private fun hasTileEntity(world: World, pos: BlockPos, state: IBlockState): Boolean =
+        world.getTileEntity(pos) != null || state.block.hasTileEntity(state)
+
+    private fun createRotationAxis(world: World, dx: Double, dz: Double): Vector3f {
+        val horizontalLengthSquared = dx * dx + dz * dz
+        if (horizontalLengthSquared < MIN_VECTOR_LENGTH_SQUARED) {
+            return Vector3f(
+                world.rand.nextFloat() - 0.5f,
+                0f,
+                world.rand.nextFloat() - 0.5f
+            ).normalize()
+        }
+        val inverseLength = (1.0 / sqrt(horizontalLengthSquared)).toFloat()
+        return Vector3f((-dz).toFloat() * inverseLength, 0f, dx.toFloat() * inverseLength)
+    }
+
+    private fun randomSigned(world: World, magnitude: Float): Float =
+        world.rand.nextFloat() * magnitude * 2f - magnitude
+
+    private fun spawnBreakParticle(world: World, pos: BlockPos, stateId: Int, velocityMultiplier: Float) {
+        val offsetX = world.rand.nextDouble()
+        val offsetY = world.rand.nextDouble() * 0.5 + 1.0
+        val offsetZ = world.rand.nextDouble()
+        val velocity = velocityMultiplier.toDouble()
+        world.spawnParticle(
+            EnumParticleTypes.BLOCK_CRACK,
+            pos.x + offsetX,
+            pos.y + offsetY,
+            pos.z + offsetZ,
+            (offsetX - 0.5) * velocity,
+            (offsetY - 0.75) * velocity,
+            (offsetZ - 0.5) * velocity,
+            stateId
+        )
+    }
+
     private fun createFractureEffect(
         world: World,
         pos: BlockPos,
@@ -380,31 +561,21 @@ object ShockwaveExecutor {
         rotation: Quaternionf,
         bounce: Double,
         lifetime: Int
-    ) {
+    ): Boolean {
         val fractureBlock = OrryxMod.fractureBlock
         val node = BlockNode(state, translation, rotation, bounce, lifetime)
         fractureBlock.registerNode(pos, node)
 
         if (!world.setBlockState(pos, fractureBlock.defaultState, 3)) {
             fractureBlock.blockNodes.remove(pos, node)
-            return
+            return false
         }
 
-        // 正确触发光照更新
         world.checkLightFor(EnumSkyBlock.BLOCK, pos)
         world.checkLightFor(EnumSkyBlock.SKY, pos)
-
-        // 通知周围方块更新渲染
-        world.markBlockRangeForRenderUpdate(
-            pos.add(-1, -1, -1),
-            pos.add(1, 1, 1)
-        )
+        world.markBlockRangeForRenderUpdate(pos.add(-1, -1, -1), pos.add(1, 1, 1))
+        return true
     }
 
-    /**
-     * 角度转弧度
-     */
-    private fun Float.toRadians(): Float {
-        return this * (Math.PI.toFloat() / 180f)
-    }
+    private fun Float.toRadians(): Float = this * (Math.PI.toFloat() / 180f)
 }

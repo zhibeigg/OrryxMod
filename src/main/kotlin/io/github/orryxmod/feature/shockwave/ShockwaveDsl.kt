@@ -21,6 +21,7 @@ class ShockwaveDsl(private val world: World) {
 
     private var fractureConfig = FractureConfig()
     private var particleConfig = ParticleConfig()
+    private var performanceConfig = ShockwavePerformanceConfig()
 
     /**
      * 配置断裂效果
@@ -41,6 +42,19 @@ class ShockwaveDsl(private val world: World) {
     }
 
     /**
+     * 配置传播、断裂和粒子的主线程执行预算
+     */
+    fun performance(block: ShockwavePerformanceDsl.() -> Unit) {
+        val dsl = ShockwavePerformanceDsl()
+        dsl.block()
+        performanceConfig = dsl.build()
+    }
+
+    fun performance(config: ShockwavePerformanceConfig) {
+        performanceConfig = config
+    }
+
+    /**
      * 执行冲击波
      */
     internal fun execute(): Boolean {
@@ -49,7 +63,8 @@ class ShockwaveDsl(private val world: World) {
         val config = ShockwaveConfig(
             shape = currentShape,
             fracture = fractureConfig,
-            particles = particleConfig
+            particles = particleConfig,
+            performance = performanceConfig
         )
 
         return ShockwaveExecutor.execute(world, config)
@@ -114,6 +129,31 @@ class ParticleDsl {
         enabled = enabled,
         density = density,
         velocityMultiplier = velocityMultiplier
+    )
+}
+
+/**
+ * 主线程执行预算 DSL
+ */
+class ShockwavePerformanceDsl {
+    var maxQueuedTasks: Int = 8
+    var maxPropagationNodes: Int = 8192
+    var maxFractureBlocks: Int = 256
+    var maxActiveFractureBlocks: Int = 512
+    var maxParticles: Int = 1024
+    var propagationNodesPerTick: Int = 512
+    var fractureBlocksPerTick: Int = 24
+    var particlesPerTick: Int = 96
+
+    internal fun build() = ShockwavePerformanceConfig(
+        maxQueuedTasks = maxQueuedTasks,
+        maxPropagationNodes = maxPropagationNodes,
+        maxFractureBlocks = maxFractureBlocks,
+        maxActiveFractureBlocks = maxActiveFractureBlocks,
+        maxParticles = maxParticles,
+        propagationNodesPerTick = propagationNodesPerTick,
+        fractureBlocksPerTick = fractureBlocksPerTick,
+        particlesPerTick = particlesPerTick
     )
 }
 

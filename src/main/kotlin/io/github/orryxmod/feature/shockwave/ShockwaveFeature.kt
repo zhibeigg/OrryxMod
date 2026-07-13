@@ -2,7 +2,10 @@ package io.github.orryxmod.feature.shockwave
 
 import io.github.orryxmod.core.api.Feature
 import io.github.orryxmod.core.api.FeatureBase
+import io.github.orryxmod.core.api.OnDisconnect
 import io.github.orryxmod.core.api.OnPacket
+import io.github.orryxmod.core.api.Subscribe
+import io.github.orryxmod.core.event.Events
 import io.github.orryxmod.core.network.OrryxPacket
 import io.github.orryxmod.util.MC
 
@@ -15,6 +18,14 @@ object ShockwaveFeature : FeatureBase() {
 
     /** 冲击波参数上限，防止恶意服务端发送超大参数导致客户端卡死 */
     private const val MAX_SHOCKWAVE_RADIUS = 50.0
+
+    @Volatile
+    var performanceConfig: ShockwavePerformanceConfig = ShockwavePerformanceConfig()
+
+    override fun disable() {
+        ShockwaveExecutor.clear()
+        super.disable()
+    }
 
     // ========== 网络包处理 ==========
 
@@ -43,6 +54,18 @@ object ShockwaveFeature : FeatureBase() {
         )
     }
 
+    @Subscribe
+    fun onClientTick(event: Events.ClientTick) {
+        if (event.phase == Events.ClientTick.Phase.END) {
+            ShockwaveExecutor.processTick(MC.world)
+        }
+    }
+
+    @OnDisconnect
+    fun onDisconnect() {
+        ShockwaveExecutor.clear()
+    }
+
     // ========== 公共 API ==========
 
     /**
@@ -56,6 +79,7 @@ object ShockwaveFeature : FeatureBase() {
                 center(x, y, z)
                 this.radius = radius
             }
+            performance(ShockwaveFeature.performanceConfig)
         }
     }
 
@@ -75,6 +99,7 @@ object ShockwaveFeature : FeatureBase() {
                 this.width = width
                 this.yaw = yaw
             }
+            performance(ShockwaveFeature.performanceConfig)
         }
     }
 
@@ -94,6 +119,7 @@ object ShockwaveFeature : FeatureBase() {
                 this.angle = angle
                 this.yaw = yaw
             }
+            performance(ShockwaveFeature.performanceConfig)
         }
     }
 
@@ -102,6 +128,9 @@ object ShockwaveFeature : FeatureBase() {
      */
     fun customShockwave(block: ShockwaveDsl.() -> Unit): Boolean {
         val world = MC.world ?: return false
-        return shockwave(world, block)
+        return shockwave(world) {
+            performance(ShockwaveFeature.performanceConfig)
+            block()
+        }
     }
 }

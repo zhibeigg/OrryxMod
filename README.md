@@ -74,6 +74,7 @@ Orryx Client 是一个基于 Minecraft Forge 1.12.2 的客户端模组，专为�
 - Mixin 字节码注入：修改原版 HUD 渲染和 Baritone 设置
 - Kotlin 协程：异步处理耗时操作
 - 自定义事件总线：支持事件优先级和取消机制
+- 可调性能保护：Shockwave 分 tick 预算、Bloom 候选缓存、Collider 距离 LOD、实体追踪与 Display List 有界缓存
 
 ## 构建方式
 
@@ -173,7 +174,8 @@ gradle --no-build-cache -b build-test.gradle test
 
 ## 服务端插件对接
 
-完整频道、数据包字段、限制与 Collider wire ID 说明见 [`docs/Plugin-Integration.md`](docs/Plugin-Integration.md)。
+- 完整频道、数据包字段、限制与 Collider wire ID：[`docs/Plugin-Integration.md`](docs/Plugin-Integration.md)
+- 客户端性能配置、默认值与硬上限：[`docs/Performance-Limits.md`](docs/Performance-Limits.md)
 
 ## 开发依赖
 

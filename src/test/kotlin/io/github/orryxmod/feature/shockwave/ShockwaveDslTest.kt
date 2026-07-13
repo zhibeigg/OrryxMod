@@ -86,6 +86,29 @@ class ShockwaveDslTest {
     }
 
     @Test
+    fun `ShockwavePerformanceDsl builds correct config`() {
+        val dsl = ShockwavePerformanceDsl()
+        dsl.maxQueuedTasks = 3
+        dsl.maxPropagationNodes = 100
+        dsl.maxFractureBlocks = 20
+        dsl.maxActiveFractureBlocks = 30
+        dsl.maxParticles = 40
+        dsl.propagationNodesPerTick = 10
+        dsl.fractureBlocksPerTick = 4
+        dsl.particlesPerTick = 8
+
+        val config = dsl.build()
+        assertEquals(3, config.maxQueuedTasks)
+        assertEquals(100, config.maxPropagationNodes)
+        assertEquals(20, config.maxFractureBlocks)
+        assertEquals(30, config.maxActiveFractureBlocks)
+        assertEquals(40, config.maxParticles)
+        assertEquals(10, config.propagationNodesPerTick)
+        assertEquals(4, config.fractureBlocksPerTick)
+        assertEquals(8, config.particlesPerTick)
+    }
+
+    @Test
     fun `circle DSL default radius`() {
         val shape = circle { center(0.0, 0.0, 0.0) }
         assertEquals(5.0, shape.radius)

@@ -13,7 +13,6 @@ import net.minecraftforge.client.event.RenderPlayerEvent
 import org.lwjgl.opengl.GL11
 import java.util.UUID
 import kotlin.math.acos
-import kotlin.math.pow
 import kotlin.math.sign
 import kotlin.math.sqrt
 
@@ -27,10 +26,11 @@ class GhostEffect(
     private val config: GhostConfig
 ) {
     companion object {
-        private const val MAX_TRACKER = 30
+        private const val MAX_TRACKER = EntityTrackerRegistry.DEFAULT_MAX_SAMPLES_PER_ENTITY
     }
 
     private val startTime = System.currentTimeMillis()
+    private var trackerEntry: EntityTrackerRegistry.Entry? = null
 
     val isActive: Boolean
         get() = System.currentTimeMillis() - startTime < timeout
@@ -47,13 +47,21 @@ class GhostEffect(
         if (player.isInvisible) return
         if (player === MC.player && MC.gameSettings.thirdPersonView == 0) return
 
-        val loc = EntityTrackerRegistry.getOrCreateEntry(player, MAX_TRACKER).trackedInfo
-        val density = config.density
-        val gap = config.gap
+        val density = config.density.coerceIn(0, MAX_TRACKER)
+        val gap = config.gap.coerceIn(0, MAX_TRACKER)
+        val sampleStep = gap + 1
+        val requestedSamples = (density.toLong() * sampleStep + 2L)
+            .coerceAtMost(MAX_TRACKER.toLong())
+            .toInt()
 
-        val start = 1
-        if (loc.size <= start) return
-        if (loc.size <= density * (gap + 1) + 1) return
+        val entry = EntityTrackerRegistry.getOrCreateEntry(player, requestedSamples.coerceAtLeast(1))
+        trackerEntry = entry
+        val loc = entry.trackedInfo
+        if (density == 0 || loc.size <= 1) return
+
+        val availableDensity = ((loc.size - 2) / sampleStep).coerceAtLeast(0)
+        val renderDensity = density.coerceAtMost(availableDensity)
+        if (renderDensity == 0) return
 
         val renderer = MC.renderManager.getEntityRenderObject<Entity>(player) as? RenderPlayer ?: return
         val biped = renderer.mainModel
@@ -75,10 +83,10 @@ class GhostEffect(
                 val tY = player.prevPosY + (player.posY - player.prevPosY) * event.partialRenderTick
                 val tZ = player.prevPosZ + (player.posZ - player.prevPosZ) * event.partialRenderTick
 
-                var index = gap + 1
-                for (i in (gap + 1)..(density * (gap + 1))) {
-                    if (index != i) continue
-                    index += gap + 1
+                var sampleOffset = sampleStep
+                repeat(renderDensity) {
+                    val i = sampleOffset
+                    sampleOffset += sampleStep
                     val entInfo = loc[loc.lastIndex - i]
 
                     GlStateManager.pushMatrix()
@@ -95,7 +103,8 @@ class GhostEffect(
                             val d1 = vec3d.x * vec3d.x + vec3d.z * vec3d.z
 
                             if (d0 > 0.0 && d1 > 0.0) {
-                                val d2 = (player.motionX * vec3d.x + player.motionZ * vec3d.z) / (sqrt(d0) * sqrt(d1))
+                                val d2 = ((player.motionX * vec3d.x + player.motionZ * vec3d.z) /
+                                    (sqrt(d0) * sqrt(d1))).coerceIn(-1.0, 1.0)
                                 val d3 = player.motionX * vec3d.z - player.motionZ * vec3d.x
                                 GlStateManager.rotate(
                                     (sign(d3) * acos(d2)).toFloat() * 180.0f / Math.PI.toFloat(),
@@ -106,7 +115,9 @@ class GhostEffect(
                             }
                         }
 
-                        val distance = sqrt((entInfo.posX - tX).pow(2) + (entInfo.posZ - tZ).pow(2))
+                        val distanceX = entInfo.posX - tX
+                        val distanceZ = entInfo.posZ - tZ
+                        val distance = sqrt(distanceX * distanceX + distanceZ * distanceZ)
                         val scale = MathHelper.clamp(100 - distance / 100, 0.0, 0.9375)
                         GlStateManager.scale(scale, -scale, -scale)
                         GlStateManager.translate(0.0f, -1.5f, 0.0f)
@@ -142,5 +153,10 @@ class GhostEffect(
         } finally {
             player.ignoreFrustumCheck = previousIgnoreFrustumCheck
         }
+    }
+
+    fun dispose() {
+        EntityTrackerRegistry.remove(trackerEntry)
+        trackerEntry = null
     }
 }

@@ -14,12 +14,16 @@ import io.github.orryxmod.core.render.EffectManager
 @Feature("collider", description = "碰撞箱渲染")
 object ColliderFeature : FeatureBase() {
 
+    /** 仅影响客户端线框质量，不改变网络碰撞体数据。 */
+    @Volatile
+    var renderConfig: ColliderRenderConfig = ColliderRenderConfig()
+
     private var renderer: ColliderRenderer? = null
 
     override fun enable() {
         if (enabled) return
         if (renderer == null) {
-            val newRenderer = ColliderRenderer()
+            val newRenderer = ColliderRenderer { renderConfig }
             if (!EffectManager.addPersistent(newRenderer)) {
                 OrryxMod.logger.error("[ColliderFeature] Failed to register renderer")
                 return

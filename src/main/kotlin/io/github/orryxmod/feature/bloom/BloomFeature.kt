@@ -26,10 +26,24 @@ import org.lwjgl.opengl.GL30
 @Feature("bloom", description = "泛光效果")
 object BloomFeature : FeatureBase() {
 
-    // 配置
+    private const val HARD_MAX_CANDIDATE_ENTITIES = 1024
+    private const val HARD_MAX_SCAN_ENTITIES = 4096
+    private const val HARD_MAX_BLOOM_ENTITIES = 256
+    private const val HARD_MAX_BLOOM_GROUPS = 32
+
+    // 性能配置使用保守默认值；均可在运行时调整，但仍受硬安全上限约束。
     object Config {
         var enabled = true
-        var maxBloomEntities = 0     // 每帧最大泛光实体数（<=0 表示不限制）
+        var candidateRefreshTicks = 5       // 候选缓存刷新间隔（至少 1 tick）
+        var maxCandidateScanPerRefresh = 2048
+        var maxCandidateEntities = 256      // 单次缓存的最大匹配实体数
+        var maxMatchCacheEntries: Int       // 名称匹配缓存上限
+            get() = BloomConfigManager.maxMatchCacheEntries
+            set(value) {
+                BloomConfigManager.maxMatchCacheEntries = value
+            }
+        var maxBloomEntities = 32           // 每帧最大泛光实体数
+        var maxBloomGroups = 8              // 每帧最大配置组数
     }
 
     // 泛光 FBO
@@ -48,40 +62,28 @@ object BloomFeature : FeatureBase() {
     private var activeTextureBackup = GL13.GL_TEXTURE0
     private var depthMaskBackup = true
 
-    private data class BloomCandidate(
+    private data class CachedBloomCandidate(
         val entity: net.minecraft.entity.EntityLivingBase,
         val renderer: net.minecraft.client.renderer.entity.RenderLivingBase<net.minecraft.entity.EntityLivingBase>,
-        val config: BloomConfig,
-        val distSq: Double
+        val match: BloomConfigMatch
     )
 
-    private fun selectCandidates(candidates: List<BloomCandidate>, maxTotal: Int): List<BloomCandidate> {
-        if (candidates.isEmpty()) return emptyList()
-        if (maxTotal <= 0) return candidates
-        if (candidates.size <= maxTotal) return candidates
-
-        val byConfig = candidates.groupBy { it.config.name }
-        val queues = byConfig.values
-            .sortedWith(
-                compareByDescending<List<BloomCandidate>> { it.first().config.priority }
-                    .thenBy { it.first().config.name }
-            )
-            .map { group -> group.sortedBy { it.distSq }.toMutableList() }
-
-        val selected = ArrayList<BloomCandidate>(maxTotal)
-        while (selected.size < maxTotal) {
-            var progressed = false
-            for (queue in queues) {
-                if (selected.size >= maxTotal) break
-                val next = queue.removeFirstOrNull() ?: continue
-                selected.add(next)
-                progressed = true
-            }
-            if (!progressed) break
-        }
-
-        return selected
+    private data class BloomCandidate(
+        val cached: CachedBloomCandidate,
+        val distSq: Double
+    ) {
+        val entity get() = cached.entity
+        val renderer get() = cached.renderer
+        val match get() = cached.match
+        val config get() = cached.match.config
     }
+
+    private val candidateSelector = BloomFairSelector()
+    private var candidateWorld: net.minecraft.world.World? = null
+    private var candidateConfigRevision = -1L
+    private var candidateRefreshTick = Long.MIN_VALUE
+    private var candidateScanStartIndex = 0
+    private var cachedBloomCandidates: List<CachedBloomCandidate> = emptyList()
 
     override fun enable() {
         super.enable()
@@ -222,34 +224,25 @@ object BloomFeature : FeatureBase() {
         val rm = MC.renderManager
         val partialTicks = event.partialTicks
 
-        // 收集需要泛光的实体（使用配置管理器）
-        val candidates = mutableListOf<BloomCandidate>()
-
-        if (BloomConfigManager.hasConfigs()) {
-            for (entity in world.loadedEntityList) {
-                if (entity !is net.minecraft.entity.EntityLivingBase) continue
-
-                val bloomConfig = run {
-                    val customName = entity.customNameTag
-                    val baseName = if (!customName.isNullOrEmpty()) customName else entity.name ?: ""
-                    BloomConfigManager.findConfig(baseName)
-                        ?: BloomConfigManager.findConfig(entity.displayName.unformattedText)
-                        ?: BloomConfigManager.findConfig(entity.displayName.formattedText)
-                } ?: continue
-
-                val maxDistSq = (bloomConfig.radius * bloomConfig.radius).toDouble()
-                val distSq = player.getDistanceSq(entity)
-                if (distSq > maxDistSq) continue
-
-                @Suppress("UNCHECKED_CAST")
-                val renderer = rm.getEntityRenderObject<net.minecraft.entity.EntityLivingBase>(entity) as? net.minecraft.client.renderer.entity.RenderLivingBase<net.minecraft.entity.EntityLivingBase>
-                    ?: continue
-
-                candidates.add(BloomCandidate(entity, renderer, bloomConfig, distSq))
-            }
-        }
-
-        val bloomEntities = selectCandidates(candidates, Config.maxBloomEntities)
+        val candidates = collectBloomCandidates(world, player, rm)
+        val configuredEntityLimit = Config.maxBloomEntities
+        val configuredGroupLimit = Config.maxBloomGroups
+        val bloomEntities = candidateSelector.select(
+            candidates = candidates,
+            maxTotal = if (configuredEntityLimit <= 0) {
+                HARD_MAX_BLOOM_ENTITIES
+            } else {
+                configuredEntityLimit.coerceAtMost(HARD_MAX_BLOOM_ENTITIES)
+            },
+            maxGroups = if (configuredGroupLimit <= 0) {
+                HARD_MAX_BLOOM_GROUPS
+            } else {
+                configuredGroupLimit.coerceAtMost(HARD_MAX_BLOOM_GROUPS)
+            },
+            groupKey = { it.match.groupKey },
+            priorityWeight = { it.match.priorityWeight },
+            distanceSq = { it.distSq }
+        )
         val pendingGlowCallbacks = glowRenderCallbacks.toList()
         val hasGlow = pendingGlowCallbacks.isNotEmpty() || bloomEntities.isNotEmpty()
         if (!hasGlow) return
@@ -272,7 +265,7 @@ object BloomFeature : FeatureBase() {
                 texture = GL11.glIsEnabled(GL11.GL_TEXTURE_2D)
             ) {
         // 按配置分组实体
-        val groupedEntities = bloomEntities.groupBy { it.config.name }
+        val groupedEntities = bloomEntities.groupBy { it.match.groupKey }
 
         // 重置 PingPong 状态
         BloomEffect.resetPingPong()
@@ -346,7 +339,7 @@ object BloomFeature : FeatureBase() {
 
         // 处理本帧发光回调；进入 GL 区域前已从共享队列移除，异常时不会重复执行。
         if (pendingGlowCallbacks.isNotEmpty()) {
-            val groupedCallbacks = pendingGlowCallbacks.groupBy { it.config?.name }
+            val groupedCallbacks = pendingGlowCallbacks.groupBy { it.config }
 
             for ((_, group) in groupedCallbacks) {
                 val config = group.first().config
@@ -399,6 +392,140 @@ object BloomFeature : FeatureBase() {
         } finally {
             restoreRenderState(previousFramebuffer, previousProgram, previousActiveTexture, previousDepthMask)
         }
+    }
+
+    private fun collectBloomCandidates(
+        world: net.minecraft.world.World,
+        player: net.minecraft.entity.player.EntityPlayer,
+        renderManager: net.minecraft.client.renderer.entity.RenderManager
+    ): List<BloomCandidate> {
+        if (!BloomConfigManager.hasConfigs()) {
+            clearCandidateCache()
+            return emptyList()
+        }
+
+        val currentRevision = BloomConfigManager.revision()
+        val currentTick = world.totalWorldTime
+        val refreshInterval = Config.candidateRefreshTicks.coerceIn(1, 200).toLong()
+        val worldChanged = candidateWorld !== world
+        val configChanged = candidateConfigRevision != currentRevision
+        val tickWentBackwards = candidateRefreshTick != Long.MIN_VALUE && currentTick < candidateRefreshTick
+        val refreshDue = candidateRefreshTick == Long.MIN_VALUE ||
+            currentTick - candidateRefreshTick >= refreshInterval
+
+        if (worldChanged || configChanged) {
+            candidateSelector.reset()
+        }
+        if (worldChanged || configChanged || tickWentBackwards || refreshDue) {
+            refreshCandidateCache(world, renderManager, currentTick, currentRevision)
+        }
+
+        if (cachedBloomCandidates.isEmpty()) return emptyList()
+
+        val validCached = ArrayList<CachedBloomCandidate>(cachedBloomCandidates.size)
+        val candidates = ArrayList<BloomCandidate>(cachedBloomCandidates.size)
+        for (cached in cachedBloomCandidates) {
+            val entity = cached.entity
+            if (!isCandidateValid(world, entity)) continue
+
+            validCached.add(cached)
+            val maxDistSq = (cached.match.config.radius * cached.match.config.radius).toDouble()
+            val distSq = player.getDistanceSq(entity)
+            if (distSq <= maxDistSq) {
+                candidates.add(BloomCandidate(cached, distSq))
+            }
+        }
+
+        if (validCached.size != cachedBloomCandidates.size) {
+            cachedBloomCandidates = validCached
+            candidateRefreshTick = Long.MIN_VALUE
+        }
+        return candidates
+    }
+
+    private fun refreshCandidateCache(
+        world: net.minecraft.world.World,
+        renderManager: net.minecraft.client.renderer.entity.RenderManager,
+        currentTick: Long,
+        expectedRevision: Long
+    ) {
+        val loadedEntities = world.loadedEntityList
+        if (loadedEntities.isEmpty()) {
+            candidateWorld = world
+            candidateConfigRevision = expectedRevision
+            candidateRefreshTick = currentTick
+            candidateScanStartIndex = 0
+            cachedBloomCandidates = emptyList()
+            return
+        }
+
+        val totalEntities = loadedEntities.size
+        val startIndex = if (candidateWorld === world) {
+            candidateScanStartIndex.coerceIn(0, totalEntities - 1)
+        } else {
+            0
+        }
+        val candidateLimit = Config.maxCandidateEntities.coerceIn(1, HARD_MAX_CANDIDATE_ENTITIES)
+        val scanLimit = Config.maxCandidateScanPerRefresh.coerceIn(1, HARD_MAX_SCAN_ENTITIES)
+        val entitiesToScan = minOf(totalEntities, scanLimit)
+        val refreshed = ArrayList<CachedBloomCandidate>(minOf(candidateLimit, entitiesToScan))
+
+        var consumedEntities = 0
+        for (offset in 0 until entitiesToScan) {
+            val index = (startIndex + offset) % totalEntities
+            consumedEntities = offset + 1
+            val entity = loadedEntities[index] as? net.minecraft.entity.EntityLivingBase ?: continue
+            if (entity.isDead || !entity.isEntityAlive) continue
+
+            val customName = entity.customNameTag
+            val baseName = if (customName.isNotEmpty()) customName else entity.name
+            val displayName = entity.displayName
+            val match = BloomConfigManager.findMatch(
+                baseName,
+                displayName.unformattedText,
+                displayName.formattedText
+            ) ?: continue
+
+            @Suppress("UNCHECKED_CAST")
+            val renderer = renderManager.getEntityRenderObject<net.minecraft.entity.EntityLivingBase>(entity)
+                as? net.minecraft.client.renderer.entity.RenderLivingBase<net.minecraft.entity.EntityLivingBase>
+                ?: continue
+
+            refreshed.add(CachedBloomCandidate(entity, renderer, match))
+            if (refreshed.size >= candidateLimit) break
+        }
+
+        val actualRevision = BloomConfigManager.revision()
+        candidateWorld = world
+        candidateConfigRevision = actualRevision
+        if (actualRevision != expectedRevision) {
+            cachedBloomCandidates = emptyList()
+            candidateRefreshTick = Long.MIN_VALUE
+            return
+        }
+
+        cachedBloomCandidates = refreshed
+        candidateRefreshTick = currentTick
+        candidateScanStartIndex = (startIndex + consumedEntities) % totalEntities
+    }
+
+    private fun isCandidateValid(
+        world: net.minecraft.world.World,
+        entity: net.minecraft.entity.EntityLivingBase
+    ): Boolean {
+        return entity.world === world &&
+            !entity.isDead &&
+            entity.isEntityAlive &&
+            world.getEntityByID(entity.entityId) === entity
+    }
+
+    private fun clearCandidateCache() {
+        candidateWorld = null
+        candidateConfigRevision = -1L
+        candidateRefreshTick = Long.MIN_VALUE
+        candidateScanStartIndex = 0
+        cachedBloomCandidates = emptyList()
+        candidateSelector.reset()
     }
 
     private fun prepareMaskRenderState() {
@@ -472,6 +599,7 @@ object BloomFeature : FeatureBase() {
     fun onDisconnect() {
         resetActiveBloomState()
         glowRenderCallbacks.clear()
+        clearCandidateCache()
         BloomConfigManager.clear()
         bloomFBODepthBuffer = -1
     }
@@ -479,6 +607,7 @@ object BloomFeature : FeatureBase() {
     private fun cleanup() {
         resetActiveBloomState()
         glowRenderCallbacks.clear()
+        clearCandidateCache()
         BloomConfigManager.clear()
 
         bloomFBO?.deleteFramebuffer()

@@ -2,6 +2,7 @@ package io.github.orryxmod.feature.collider
 
 import io.github.orryxmod.OrryxMod
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.atomic.AtomicLong
 
 /**
  * 碰撞箱状态管理器
@@ -11,6 +12,7 @@ object ColliderManager {
     private const val MAX_COLLIDERS = 200
 
     private val colliders = ConcurrentHashMap<String, ColliderData>()
+    private val geometryRevision = AtomicLong()
 
     /**
      * 添加或替换碰撞箱
@@ -21,6 +23,7 @@ object ColliderManager {
             return
         }
         colliders[data.id] = data
+        geometryRevision.incrementAndGet()
     }
 
     /**
@@ -29,13 +32,16 @@ object ColliderManager {
     fun update(id: String, shape: ColliderShape) {
         val existing = colliders[id] ?: return
         colliders[id] = existing.copy(shape = shape)
+        geometryRevision.incrementAndGet()
     }
 
     /**
      * 移除碰撞箱
      */
     fun remove(id: String) {
-        colliders.remove(id)
+        if (colliders.remove(id) != null) {
+            geometryRevision.incrementAndGet()
+        }
     }
 
     /**
@@ -43,12 +49,15 @@ object ColliderManager {
      */
     fun clear() {
         colliders.clear()
+        geometryRevision.incrementAndGet()
     }
 
     /**
-     * 获取所有碰撞箱的快照
+     * 获取线程安全的弱一致视图，避免渲染帧中复制整个集合。
      */
-    fun snapshot(): Collection<ColliderData> = colliders.values.toList()
+    fun view(): Collection<ColliderData> = colliders.values
+
+    internal val revision: Long get() = geometryRevision.get()
 
     /**
      * 当前碰撞箱数量

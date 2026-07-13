@@ -30,10 +30,25 @@ data class ParticleConfig(
 )
 
 /**
+ * 冲击波执行预算。所有限制均按单次冲击波计算，tick 预算用于平摊主线程工作。
+ */
+data class ShockwavePerformanceConfig(
+    val maxQueuedTasks: Int = 8,
+    val maxPropagationNodes: Int = 8192,
+    val maxFractureBlocks: Int = 256,
+    val maxActiveFractureBlocks: Int = 512,
+    val maxParticles: Int = 1024,
+    val propagationNodesPerTick: Int = 512,
+    val fractureBlocksPerTick: Int = 24,
+    val particlesPerTick: Int = 96
+)
+
+/**
  * 冲击波完整配置
  */
 data class ShockwaveConfig(
     val shape: Shape,
     val fracture: FractureConfig = FractureConfig(),
-    val particles: ParticleConfig = ParticleConfig()
+    val particles: ParticleConfig = ParticleConfig(),
+    val performance: ShockwavePerformanceConfig = ShockwavePerformanceConfig()
 )

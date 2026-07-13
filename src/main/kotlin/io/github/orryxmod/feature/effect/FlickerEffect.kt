@@ -5,13 +5,8 @@ import net.minecraftforge.client.event.RenderWorldLastEvent
 import java.util.UUID
 
 /**
- * Flicker 效果 - 闪影效果
- * 在玩家当前位置渲染一个渐隐的残影
- *
- * 使用 Display List 烘焙技术：
- * - 在第一次渲染时"录制"一次完整的模型渲染到 Display List
- * - 之后直接回放 Display List，完全绕过 Mo' Bends 等动画模组的 hook
- * - 实现真正的"动画冻结"效果
+ * Flicker 效果 - 在捕获位置渲染渐隐的冻结玩家残影。
+ * 几何由有界 Display List 缓存共享，效果实例只持有姿态位置快照和缓存引用。
  */
 class FlickerEffect(
     val entityUUID: UUID,
@@ -20,21 +15,12 @@ class FlickerEffect(
 ) {
     private val startTime = System.currentTimeMillis()
     private val fadeDuration = if (config.duration > 0) config.duration else timeout
-
-    /** 烘焙的玩家几何数据 */
-    private var bakedGeometry: BakedPlayerGeometry? = null
-
-    /** 是否已完成烘焙 */
-    private var baked = false
+    private var geometryHandle: FlickerGeometryCache.Handle? = null
+    private var initializationAttempted = false
 
     val isActive: Boolean
         get() = System.currentTimeMillis() - startTime < timeout
 
-    /**
-     * 当前透明度
-     * duration > 0: 在 duration 时间内从 alpha 淡化到 0
-     * duration <= 0: 在整个 timeout 期间线性衰减
-     */
     val currentAlpha: Float
         get() {
             val elapsed = System.currentTimeMillis() - startTime
@@ -42,51 +28,31 @@ class FlickerEffect(
             return (1f - elapsed / fadeDuration.toFloat()) * config.alpha
         }
 
-    /** 缩放值 */
     val scale: Float
         get() = config.scale
 
     /**
-     * 初始化（创建烘焙对象，但不执行烘焙）
-     * 烘焙将在第一次渲染时执行（需要 GL 上下文）
+     * 保留原初始化入口；世界查询和 GL 烘焙延迟到第一次渲染线程回调。
      */
-    fun initTracker() {
-        bakedGeometry = BakedPlayerGeometry(entityUUID)
-    }
+    fun initTracker() = Unit
 
-    /**
-     * 在 RenderWorldLastEvent 中渲染闪影
-     * 第一次调用时会执行烘焙，之后直接回放 Display List
-     */
     fun renderFlicker(@Suppress("UNUSED_PARAMETER") event: RenderWorldLastEvent) {
         val textureId = FileManager.pictures["flicker"] ?: return
-        val geometry = bakedGeometry ?: return
-
         if (!isActive) return
 
         val alpha = currentAlpha
-        if (alpha <= 0) return
+        if (alpha <= 0f) return
 
-        // 第一次渲染时执行烘焙
-        if (!baked) {
-            baked = true
-            if (!geometry.bake(textureId)) {
-                // 烘焙失败，清理资源
-                bakedGeometry = null
-                return
-            }
+        if (!initializationAttempted) {
+            initializationAttempted = true
+            geometryHandle = FlickerGeometryCache.acquire(entityUUID, textureId)
         }
 
-        // 渲染烘焙的几何数据
-        geometry.render(alpha, scale)
+        geometryHandle?.render(alpha, scale)
     }
 
-    /**
-     * 清理资源
-     * 效果结束时由 EffectFeature 调用
-     */
     fun dispose() {
-        bakedGeometry?.dispose()
-        bakedGeometry = null
+        geometryHandle?.release()
+        geometryHandle = null
     }
 }

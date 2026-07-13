@@ -33,6 +33,19 @@ class ShockwaveConfigTest {
     }
 
     @Test
+    fun `ShockwavePerformanceConfig default values are conservative`() {
+        val config = ShockwavePerformanceConfig()
+        assertEquals(8, config.maxQueuedTasks)
+        assertEquals(8192, config.maxPropagationNodes)
+        assertEquals(256, config.maxFractureBlocks)
+        assertEquals(512, config.maxActiveFractureBlocks)
+        assertEquals(1024, config.maxParticles)
+        assertEquals(512, config.propagationNodesPerTick)
+        assertEquals(24, config.fractureBlocksPerTick)
+        assertEquals(96, config.particlesPerTick)
+    }
+
+    @Test
     fun `ShockwaveConfig copy behavior`() {
         val shape = CircleShape(Vector3d(0.0, 0.0, 0.0), 5.0)
         val config = ShockwaveConfig(shape = shape)
