@@ -12,6 +12,6 @@ public class MixinBaritoneSettings {
 
     @Inject(method = "<init>", at = @At("RETURN"))
     private void baritoneSettingsInit(CallbackInfo ci) {
-        BaritoneUtils.INSTANCE.initialize();
+        BaritoneUtils.applyDefaults((Settings) (Object) this);
     }
 }

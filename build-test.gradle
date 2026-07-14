@@ -6,7 +6,7 @@ plugins {
 }
 
 group = 'io.github.orryxmod'
-version = '1.4.5'
+version = '1.4.6'
 
 repositories {
     mavenCentral()
@@ -53,6 +53,8 @@ sourceSets {
         kotlin {
             // 依赖完整 Minecraft Entity/World 实现，仅在主 Forge 构建中运行。
             exclude 'io/github/orryxmod/core/EntityTrackerRegistryTest.kt'
+            // 依赖真实 Baritone API，仅在主 Forge 构建中运行。
+            exclude 'io/github/orryxmod/util/BaritoneUtilsTest.kt'
         }
     }
 }
