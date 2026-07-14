@@ -4,6 +4,7 @@ import io.github.orryxmod.core.registry.FeatureRegistry
 import io.github.orryxmod.feature.aim.AimConfig
 import io.github.orryxmod.feature.aim.AimFeature
 import io.github.orryxmod.feature.aim.AimModule
+import io.github.orryxmod.feature.aim.AimState
 import io.github.orryxmod.feature.aim.IndicatorType
 import io.github.orryxmod.feature.bloom.BloomConfig
 import io.github.orryxmod.feature.bloom.BloomConfigManager
@@ -209,6 +210,27 @@ object CommandManager {
                 AimFeature.cancel()
                 sendSuccess("Aim cancelled")
             }
+            "pressaim" -> {
+                val minScale = args.getOrNull(1)?.toDoubleOrNull() ?: 1.0
+                val maxScale = args.getOrNull(2)?.toDoubleOrNull() ?: 5.0
+                val maxTicks = args.getOrNull(3)?.toLongOrNull() ?: 100L
+                val maxDistance = args.getOrNull(4)?.toDoubleOrNull() ?: 20.0
+                if (!minScale.isFinite() || !maxScale.isFinite() || !maxDistance.isFinite() ||
+                    minScale < 0.0 || maxScale < minScale || maxTicks !in 1..6_000L || maxDistance < 0.0
+                ) {
+                    sendError("Usage: .pressaim [minScale] [maxScale] [maxTicks] [maxDistance]")
+                    return
+                }
+                AimState.startPressAiming(
+                    skill = "test-press",
+                    module = AimModule.POINT,
+                    config = AimConfig(scale = minScale, maxDistance = maxDistance),
+                    minScale = minScale,
+                    maxScale = maxScale,
+                    durationTicks = maxTicks
+                )
+                sendSuccess("Pressing Aim started: $minScale -> $maxScale in $maxTicks ticks")
+            }
 
             // ========== 导航系统测试命令 ==========
             "nav", "navigate" -> {
@@ -229,17 +251,18 @@ object CommandManager {
                 val action = args.getOrNull(1)?.lowercase() ?: "toggle"
                 when (action) {
                     "show", "on", "1" -> {
-                        MouseFeature.setCursorVisible(true)
+                        MouseFeature.requestCursorVisible(true)
                         sendSuccess("Mouse cursor shown")
                         sendInfo("Press M or use .mouse hide to hide")
                     }
                     "hide", "off", "0" -> {
-                        MouseFeature.setCursorVisible(false)
+                        MouseFeature.requestCursorVisible(false)
                         sendSuccess("Mouse cursor hidden")
                     }
                     "toggle", "t" -> {
-                        MouseFeature.toggleCursor()
-                        val state = if (MouseFeature.isVisible()) "shown" else "hidden"
+                        val show = !MouseFeature.isVisible()
+                        MouseFeature.requestCursorVisible(show)
+                        val state = if (show) "shown" else "hidden"
                         sendSuccess("Mouse cursor $state")
                     }
                     else -> {
@@ -421,18 +444,30 @@ object CommandManager {
                         ColliderManager.add(data)
                         sendSuccess("Ray collider: length=$length")
                     }
+                    "composite" -> {
+                        val children = listOf(
+                            ColliderData(genId(), 0, 255, 128, 220, ColliderShape.Sphere(px - 1.5, py + 1.2, pz, 1.0)),
+                            ColliderData(genId(), 255, 200, 0, 220, ColliderShape.AABB(px + 1.5, py + 1.2, pz, 0.8, 1.2, 0.8)),
+                            ColliderData(genId(), 0, 180, 255, 220, ColliderShape.Capsule(px, py + 1.6, pz + 1.8, 0.5, 1.0))
+                        )
+                        ColliderManager.add(
+                            ColliderData(genId(), 255, 255, 255, 220, ColliderShape.Composite(children))
+                        )
+                        sendSuccess("Composite collider: ${children.size} children")
+                    }
                     "clear" -> {
                         val count = ColliderManager.size
                         ColliderManager.clear()
                         sendSuccess("Cleared $count colliders")
                     }
                     else -> {
-                        sendInfo("Usage: .collider <sphere|aabb|obb|capsule|ray|clear>")
+                        sendInfo("Usage: .collider <sphere|aabb|obb|capsule|ray|composite|clear>")
                         sendInfo("  .collider sphere [radius]")
                         sendInfo("  .collider aabb [hx] [hy] [hz]")
                         sendInfo("  .collider obb [hx] [hy] [hz]")
                         sendInfo("  .collider capsule [radius] [halfHeight]")
                         sendInfo("  .collider ray [length]")
+                        sendInfo("  .collider composite")
                         sendInfo("  .collider clear")
                     }
                 }
@@ -451,7 +486,7 @@ object CommandManager {
                 sendInfo("  .entityshow [ms] [alpha] [fadeOut] [offsetX]")
                 sendInfo("${TextFormatting.WHITE}--- Aim ---")
                 sendInfo("  .aim [point|dir|area] [texture|model|circle] [scale] [maxDist]")
-                sendInfo("  .cancelaim")
+                sendInfo("  .cancelaim / .pressaim [min] [max] [ticks] [distance]")
                 sendInfo("${TextFormatting.WHITE}--- Navigation ---")
                 sendInfo("  .nav [x] [y] [z] / .stopnav")
                 sendInfo("${TextFormatting.WHITE}--- Mouse ---")
@@ -462,7 +497,7 @@ object CommandManager {
                 sendInfo("  .bloomremove <name> / .bloomclear / .bloomlist")
                 sendInfo("  .bloomtest [r] [g] [b] [strength] / .bloommax [n]")
                 sendInfo("${TextFormatting.WHITE}--- Collider ---")
-                sendInfo("  .collider <sphere|aabb|obb|capsule|ray|clear>")
+                sendInfo("  .collider <sphere|aabb|obb|capsule|ray|composite|clear>")
             }
 
             else -> {

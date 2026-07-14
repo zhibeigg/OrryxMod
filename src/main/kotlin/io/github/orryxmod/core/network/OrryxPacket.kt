@@ -32,6 +32,17 @@ sealed class OrryxPacket {
         override val packetId = 2
     }
 
+    data class PressAimRequest(
+        val skill: String,
+        val picture: String,
+        val minScale: Double,
+        val maxScale: Double,
+        val maxDistance: Double,
+        val maxTicks: Long
+    ) : OrryxPacket() {
+        override val packetId = 6
+    }
+
     data class AimResponse(
         val skill: String,
         val x: Double,

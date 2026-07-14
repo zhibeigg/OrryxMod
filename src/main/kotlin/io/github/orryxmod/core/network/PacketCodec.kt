@@ -34,6 +34,7 @@ object PacketCodec {
     private const val MAX_AIM_SCALE = 100.0
     private const val MIN_AIM_DISTANCE = 0.1
     private const val MAX_AIM_DISTANCE = 512.0
+    private const val MAX_AIM_PRESS_TICKS = 6_000L
 
     /** COMPOSITE 单层子碰撞体上限 */
     private const val MAX_COMPOSITE_CHILDREN = 50
@@ -73,6 +74,27 @@ object PacketCodec {
                     duration = input.readLong().coerceIn(-1, 60_000),
                     scale = input.readBoundedFloat("flicker scale", 0.1f, 10f)
                 )
+                6 -> {
+                    val skill = input.readSafeUTF()
+                    val picture = input.readSafeUTF()
+                    val rawMinScale = input.readFiniteDouble("press aim minScale")
+                    val rawMaxScale = input.readFiniteDouble("press aim maxScale")
+                    val rawMaxDistance = input.readFiniteDouble("press aim maxDistance")
+                    val maxTicks = input.readLong()
+                    require(rawMinScale >= 0.0 && rawMaxScale >= rawMinScale) {
+                        "press aim scale must satisfy 0 <= minScale <= maxScale"
+                    }
+                    require(rawMaxDistance >= 0.0) { "press aim maxDistance must be non-negative" }
+                    require(maxTicks in 1..MAX_AIM_PRESS_TICKS) { "press aim maxTicks out of range: $maxTicks" }
+                    OrryxPacket.PressAimRequest(
+                        skill = skill,
+                        picture = picture,
+                        minScale = rawMinScale.coerceAtMost(MAX_AIM_SCALE),
+                        maxScale = rawMaxScale.coerceAtMost(MAX_AIM_SCALE),
+                        maxDistance = rawMaxDistance.coerceAtMost(MAX_AIM_DISTANCE),
+                        maxTicks = maxTicks
+                    )
+                }
                 7 -> OrryxPacket.MouseControl(
                     show = input.readBoolean()
                 )

@@ -66,7 +66,9 @@ class ColliderRenderer(
         if (colliders.isEmpty()) return
 
         val config = configProvider()
-        RenderUtils.withGlState(blend = true, depth = false, texture = false, lighting = false) {
+        RenderUtils.withGlState(blend = true, depth = true, texture = false, lighting = false) {
+            // 读取场景深度以获得正常遮挡，但不写入深度，避免线框影响后续特效。
+            GlStateManager.depthMask(false)
             GL11.glLineWidth(2.0f)
             for (data in colliders) {
                 drawShape(context, data.shape, data.r, data.g, data.b, data.a, config, null, 0)
@@ -183,7 +185,7 @@ class ColliderRenderer(
             val qy = s.qy
             val qz = s.qz
             val qw = s.qw
-            matrixBuffer.clear()
+            RenderUtils.clearBufferForJava8(matrixBuffer)
             matrixBuffer.put(1 - 2 * (qy * qy + qz * qz)).put(2 * (qx * qy + qz * qw))
                 .put(2 * (qx * qz - qy * qw)).put(0f)
             matrixBuffer.put(2 * (qx * qy - qz * qw)).put(1 - 2 * (qx * qx + qz * qz))
@@ -191,7 +193,7 @@ class ColliderRenderer(
             matrixBuffer.put(2 * (qx * qz + qy * qw)).put(2 * (qy * qz - qx * qw))
                 .put(1 - 2 * (qx * qx + qy * qy)).put(0f)
             matrixBuffer.put(0f).put(0f).put(0f).put(1f)
-            matrixBuffer.flip()
+            RenderUtils.flipBufferForJava8(matrixBuffer)
             GL11.glMultMatrix(matrixBuffer)
 
             drawBox(-s.hx, -s.hy, -s.hz, s.hx, s.hy, s.hz, r, g, b, a)

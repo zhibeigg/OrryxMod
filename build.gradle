@@ -36,8 +36,15 @@ repositories {
 
 sourceCompatibility = targetCompatibility = compileJava.sourceCompatibility = compileJava.targetCompatibility = '1.8'
 
+def java8Launcher = project.extensions
+    .getByType(org.gradle.jvm.toolchain.JavaToolchainService)
+    .launcherFor {
+        languageVersion = org.gradle.jvm.toolchain.JavaLanguageVersion.of(8)
+    }
+
 tasks.withType(org.jetbrains.kotlin.gradle.tasks.KotlinCompile).configureEach {
     kotlinOptions.jvmTarget = '1.8'
+    kotlinJavaToolchain.toolchain.use(java8Launcher)
 }
 
 // Minecraft 配置
@@ -151,6 +158,11 @@ processResources {
     }
 }
 
+// 普通 JAR 仅用于开发检查，避免与可发布 Shadow JAR 同名。
+jar {
+    archiveClassifier.set 'plain'
+}
+
 // Shadow JAR
 shadowJar {
     manifest.attributes(
@@ -231,6 +243,10 @@ sourceSets.each {
 }
 
 // 测试配置
+tasks.withType(Test).configureEach {
+    useJUnitPlatform()
+}
+
 sourceSets {
     test {
         kotlin.srcDirs = ['src/test/kotlin']

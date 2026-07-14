@@ -6,7 +6,7 @@ plugins {
 }
 
 group = 'io.github.orryxmod'
-version = '1.4.6'
+version = '1.4.11'
 
 repositories {
     mavenCentral()
@@ -17,10 +17,15 @@ java {
     targetCompatibility = JavaVersion.VERSION_1_8
 }
 
-tasks.withType(org.jetbrains.kotlin.gradle.tasks.KotlinCompile).configureEach {
-    kotlinOptions {
-        jvmTarget = '1.8'
+def java8Launcher = project.extensions
+    .getByType(org.gradle.jvm.toolchain.JavaToolchainService)
+    .launcherFor {
+        languageVersion = org.gradle.jvm.toolchain.JavaLanguageVersion.of(8)
     }
+
+tasks.withType(org.jetbrains.kotlin.gradle.tasks.KotlinCompile).configureEach {
+    kotlinOptions.jvmTarget = '1.8'
+    kotlinJavaToolchain.toolchain.use(java8Launcher)
 }
 
 sourceSets {
@@ -55,6 +60,8 @@ sourceSets {
             exclude 'io/github/orryxmod/core/EntityTrackerRegistryTest.kt'
             // 依赖真实 Baritone API，仅在主 Forge 构建中运行。
             exclude 'io/github/orryxmod/util/BaritoneUtilsTest.kt'
+            // 依赖 LWJGL/Forge 渲染类，仅在主 Forge 构建中运行。
+            exclude 'io/github/orryxmod/core/render/RenderUtilsTest.kt'
         }
     }
 }

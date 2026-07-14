@@ -60,6 +60,24 @@ object AimFeature : FeatureBase() {
         startAiming(packet.skill, module, config)
     }
 
+    @OnPacket(OrryxPacket.PressAimRequest::class)
+    fun onPressAimRequest(packet: OrryxPacket.PressAimRequest) {
+        if (!enabled) return
+        val config = AimConfig(
+            scale = packet.minScale,
+            maxDistance = packet.maxDistance,
+            indicatorType = IndicatorType.TEXTURE
+        )
+        AimState.startPressAiming(
+            skill = packet.skill,
+            module = AimModule.POINT,
+            config = config,
+            minScale = packet.minScale,
+            maxScale = packet.maxScale,
+            durationTicks = packet.maxTicks
+        )
+    }
+
     @OnPacket(OrryxPacket.AimConfirm::class)
     fun onAimConfirm(packet: OrryxPacket.AimConfirm) {
         if (!enabled) return

@@ -1,0 +1,16 @@
+{
+  "mappings": {
+    "io/github/orryxmod/mixin/MixinGuiIngame": {
+      "renderGameOverlay": "Lnet/minecraft/client/gui/GuiIngame;func_175180_a(F)V",
+      "setOverlayMessage": "Lnet/minecraft/client/gui/GuiIngame;func_110326_a(Ljava/lang/String;Z)V"
+    }
+  },
+  "data": {
+    "searge": {
+      "io/github/orryxmod/mixin/MixinGuiIngame": {
+        "renderGameOverlay": "Lnet/minecraft/client/gui/GuiIngame;func_175180_a(F)V",
+        "setOverlayMessage": "Lnet/minecraft/client/gui/GuiIngame;func_110326_a(Ljava/lang/String;Z)V"
+      }
+    }
+  }
+}

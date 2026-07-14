@@ -5,12 +5,14 @@ import io.github.orryxmod.core.FileManager
 import io.github.orryxmod.core.render.RenderUtils
 import io.github.orryxmod.util.MC
 import net.minecraft.client.renderer.GlStateManager
+import net.minecraft.client.renderer.OpenGlHelper
 import net.minecraft.client.renderer.entity.RenderPlayer
 import net.minecraft.entity.Entity
 import net.minecraft.entity.player.EntityPlayer
 import net.minecraft.util.math.MathHelper
 import net.minecraftforge.client.event.RenderPlayerEvent
 import org.lwjgl.opengl.GL11
+import org.lwjgl.opengl.GL13
 import java.util.UUID
 import kotlin.math.acos
 import kotlin.math.sign
@@ -76,7 +78,10 @@ class GhostEffect(
                 texture = true
             ) {
                 GlStateManager.shadeModel(GL11.GL_SMOOTH)
-                GlStateManager.enableCull()
+                GL13.glActiveTexture(OpenGlHelper.defaultTexUnit)
+                GlStateManager.setActiveTexture(OpenGlHelper.defaultTexUnit)
+                OpenGlHelper.setLightmapTextureCoords(OpenGlHelper.lightmapTexUnit, 240f, 240f)
+                GlStateManager.disableCull()
                 GlStateManager.translate(event.x, event.y, event.z)
 
                 val tX = player.prevPosX + (player.posX - player.prevPosX) * event.partialRenderTick

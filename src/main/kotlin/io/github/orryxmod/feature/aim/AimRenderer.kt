@@ -16,6 +16,7 @@ object AimRenderer : RenderableEffect {
 
     override fun update() {
         if (!AimState.isAiming) return
+        AimState.updatePressProgress()
         AimState.currentIndicator?.update()
     }
 

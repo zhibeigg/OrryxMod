@@ -27,6 +27,11 @@ object AimState {
         private set
 
     private var currentTarget: AimTargetCalculation? = null
+    private var pressBaseConfig: AimConfig? = null
+    private var pressMinScale = 0.0
+    private var pressMaxScale = 0.0
+    private var pressDurationTicks = 0L
+    private var pressElapsedTicks = 0L
 
     /**
      * 开始瞄准，根据 IndicatorType 创建对应指示器
@@ -39,7 +44,36 @@ object AimState {
         currentModule = module
         currentConfig = config
         currentTarget = null
+        pressBaseConfig = null
+        pressDurationTicks = 0L
+        pressElapsedTicks = 0L
         currentIndicator = createIndicator(config.indicatorType)
+    }
+
+    fun startPressAiming(
+        skill: String,
+        module: AimModule,
+        config: AimConfig,
+        minScale: Double,
+        maxScale: Double,
+        durationTicks: Long
+    ) {
+        require(minScale.isFinite() && maxScale.isFinite() && maxScale >= minScale)
+        require(durationTicks > 0L)
+        startAiming(skill, module, config.copy(scale = minScale))
+        pressBaseConfig = config
+        pressMinScale = minScale
+        pressMaxScale = maxScale
+        pressDurationTicks = durationTicks
+        pressElapsedTicks = 0L
+    }
+
+    fun updatePressProgress() {
+        val baseConfig = pressBaseConfig ?: return
+        if (!isAiming || pressDurationTicks <= 0L) return
+        pressElapsedTicks = (pressElapsedTicks + 1L).coerceAtMost(pressDurationTicks)
+        val progress = pressElapsedTicks.toDouble() / pressDurationTicks.toDouble()
+        currentConfig = baseConfig.copy(scale = pressMinScale + (pressMaxScale - pressMinScale) * progress)
     }
 
     /**
@@ -53,6 +87,9 @@ object AimState {
         currentModule = AimModule.POINT
         currentConfig = AimConfig()
         currentTarget = null
+        pressBaseConfig = null
+        pressDurationTicks = 0L
+        pressElapsedTicks = 0L
     }
 
     private fun createIndicator(type: IndicatorType): AimIndicator = when (type) {

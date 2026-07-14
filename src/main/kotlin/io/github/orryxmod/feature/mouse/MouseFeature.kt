@@ -6,6 +6,9 @@ import io.github.orryxmod.core.api.OnDisconnect
 import io.github.orryxmod.core.api.OnPacket
 import io.github.orryxmod.core.network.OrryxPacket
 import io.github.orryxmod.util.MC
+import net.minecraftforge.common.MinecraftForge
+import net.minecraftforge.fml.common.eventhandler.SubscribeEvent
+import net.minecraftforge.fml.common.gameevent.TickEvent
 import org.lwjgl.input.Mouse
 
 /**
@@ -20,10 +23,25 @@ import org.lwjgl.input.Mouse
 @Feature("mouse", description = "鼠标控制")
 object MouseFeature : FeatureBase() {
 
+    private const val OVERLAY_RETRY_DELAY_TICKS = 20
+
     private var _isVisible = false
+    private var desiredVisible = false
+    private var pendingVisibility: Boolean? = null
+    private var overlayRetryTicks = 0
+
+    override fun enable() {
+        if (enabled) return
+        desiredVisible = false
+        pendingVisibility = null
+        overlayRetryTicks = 0
+        MinecraftForge.EVENT_BUS.register(this)
+        super.enable()
+    }
 
     override fun disable() {
         if (!enabled) return
+        MinecraftForge.EVENT_BUS.unregister(this)
         hideCursor()
         super.disable()
     }
@@ -32,7 +50,7 @@ object MouseFeature : FeatureBase() {
 
     @OnPacket(OrryxPacket.MouseControl::class)
     fun onMouseControl(packet: OrryxPacket.MouseControl) {
-        setCursorVisible(packet.show)
+        requestCursorVisible(packet.show)
     }
 
     // ========== 公共 API ==========
@@ -40,11 +58,66 @@ object MouseFeature : FeatureBase() {
     /**
      * 设置鼠标指针可见性
      */
+    fun requestCursorVisible(visible: Boolean) {
+        if (!enabled) {
+            desiredVisible = false
+            pendingVisibility = null
+            overlayRetryTicks = 0
+            return
+        }
+
+        desiredVisible = visible
+        if (!visible || MC.currentScreen == null || TransparentOverlay.isShowing) {
+            pendingVisibility = null
+            setCursorVisible(visible)
+        } else {
+            pendingVisibility = true
+        }
+    }
+
+    @SubscribeEvent
+    fun onClientTick(event: TickEvent.ClientTickEvent) {
+        if (event.phase != TickEvent.Phase.END) return
+        if (overlayRetryTicks > 0) overlayRetryTicks--
+
+        val visible = pendingVisibility
+        if (visible != null) {
+            if (visible && MC.currentScreen != null && !TransparentOverlay.isShowing) return
+            if (visible && overlayRetryTicks > 0) {
+                maintainReleasedMouse()
+                return
+            }
+            pendingVisibility = null
+            setCursorVisible(visible)
+            return
+        }
+
+        // 某些整合包会清空自定义 GuiScreen；此时持续保持游戏失焦和鼠标释放，
+        // 并按节流间隔在安全的空界面 tick 尝试恢复透明覆盖层。
+        if (desiredVisible) {
+            if (MC.currentScreen == null && !TransparentOverlay.isShowing && overlayRetryTicks == 0) {
+                if (!TransparentOverlay.show()) {
+                    overlayRetryTicks = OVERLAY_RETRY_DELAY_TICKS
+                }
+            }
+            maintainReleasedMouse()
+        }
+    }
+
     fun setCursorVisible(visible: Boolean) {
         if (visible) {
             showCursor()
         } else {
             hideCursor()
+        }
+    }
+
+    private fun maintainReleasedMouse() {
+        if (MC.inGameHasFocus) {
+            MC.setIngameNotInFocus()
+        }
+        if (Mouse.isGrabbed()) {
+            Mouse.setGrabbed(false)
         }
     }
 
@@ -54,25 +127,33 @@ object MouseFeature : FeatureBase() {
      */
     fun showCursor() {
         if (!enabled) return
+
+        desiredVisible = true
+        _isVisible = true
         if (!TransparentOverlay.show()) {
-            _isVisible = false
-            return
+            pendingVisibility = true
+            overlayRetryTicks = OVERLAY_RETRY_DELAY_TICKS
+        } else {
+            pendingVisibility = null
+            overlayRetryTicks = 0
         }
 
-        _isVisible = true
-        Mouse.setGrabbed(false)
+        maintainReleasedMouse()
     }
 
     /**
      * 隐藏鼠标指针
      */
     fun hideCursor() {
+        desiredVisible = false
+        pendingVisibility = null
+        overlayRetryTicks = 0
         _isVisible = false
         TransparentOverlay.hide()
 
-        // 只在游戏中时抓取鼠标
+        // 只在游戏中且没有其他 GUI 时恢复原版焦点与鼠标抓取。
         if (MC.player != null && MC.currentScreen == null) {
-            Mouse.setGrabbed(true)
+            MC.setIngameFocus()
         }
     }
 
@@ -80,21 +161,19 @@ object MouseFeature : FeatureBase() {
      * 切换鼠标指针可见性
      */
     fun toggleCursor() {
-        if (_isVisible) {
-            hideCursor()
-        } else {
-            showCursor()
-        }
+        requestCursorVisible(!desiredVisible)
     }
 
     /**
-     * 检查鼠标指针是否可见
-     * Mixin 通过此方法判断是否阻止视角控制
+     * 返回调用方期望的鼠标可见状态；实际覆盖层可能仍在等待其他 GUI 关闭。
      */
-    fun isVisible(): Boolean = _isVisible
+    fun isVisible(): Boolean = desiredVisible
 
     internal fun onOverlayClosed() {
-        _isVisible = false
+        if (_isVisible) {
+            pendingVisibility = true
+            overlayRetryTicks = maxOf(overlayRetryTicks, OVERLAY_RETRY_DELAY_TICKS)
+        }
     }
 
     // ========== 生命周期 ==========

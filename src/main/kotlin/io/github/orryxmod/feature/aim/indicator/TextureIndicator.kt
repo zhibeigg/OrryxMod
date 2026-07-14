@@ -30,23 +30,23 @@ class TextureIndicator : AimIndicator {
         val rel = context.toRelative(location.x, location.y, location.z)
         val scale = config.scale
 
-        RenderUtils.withGlState(blend = true) {
+        RenderUtils.withGlState(blend = true, depth = false) {
             GlStateManager.translate(rel.x, rel.y, rel.z)
             GlStateManager.rotate(-player.rotationYaw, 0.0f, 1.0f, 0.0f)
 
             // 底部选择圈（正面）
             FileManager.bindTexture(selectId)
-            RenderUtils.drawTexturedQuadHorizontal(0.0, 1.7, 0.0, scale, scale)
+            RenderUtils.drawTexturedQuadHorizontal(0.0, 0.05, 0.0, scale, scale)
 
             // 底部选择圈（反面）
             FileManager.bindTexture(selectId)
             GlStateManager.rotate(180f, 1.0f, 0.0f, 0.0f)
-            RenderUtils.drawTexturedQuadHorizontal(0.0, -1.7, 0.0, scale, scale)
+            RenderUtils.drawTexturedQuadHorizontal(0.0, -0.05, 0.0, scale, scale)
 
             // 浮动箭头
             FileManager.bindTexture(arrowId)
             GlStateManager.rotate(-180f, 1.0f, 0.0f, 0.0f)
-            RenderUtils.drawTexturedQuadVertical(0.0, 3.5 + animationOffset / 2000.0, 0.0, scale / 4, scale / 4)
+            RenderUtils.drawTexturedQuadVertical(0.0, 0.5 + animationOffset / 2000.0, 0.0, scale / 4, scale / 4)
         }
     }
 

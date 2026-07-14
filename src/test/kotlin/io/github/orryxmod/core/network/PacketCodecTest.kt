@@ -124,6 +124,51 @@ class PacketCodecTest {
     }
 
     @Test
+    fun `decode PressAimRequest`() {
+        val packet = decodePacket {
+            writeInt(6)
+            writeUTF("charged-skill")
+            writeUTF("default")
+            writeDouble(0.0)
+            writeDouble(5.0)
+            writeDouble(20.0)
+            writeLong(100L)
+        } as OrryxPacket.PressAimRequest
+
+        assertEquals("charged-skill", packet.skill)
+        assertEquals("default", packet.picture)
+        assertEquals(0.0, packet.minScale)
+        assertEquals(5.0, packet.maxScale)
+        assertEquals(20.0, packet.maxDistance)
+        assertEquals(100L, packet.maxTicks)
+    }
+
+    @Test
+    fun `invalid PressAimRequest ranges are rejected`() {
+        val reversed = decodePacket {
+            writeInt(6)
+            writeUTF("skill")
+            writeUTF("default")
+            writeDouble(5.0)
+            writeDouble(1.0)
+            writeDouble(20.0)
+            writeLong(100L)
+        }
+        val zeroTicks = decodePacket {
+            writeInt(6)
+            writeUTF("skill")
+            writeUTF("default")
+            writeDouble(1.0)
+            writeDouble(5.0)
+            writeDouble(20.0)
+            writeLong(0L)
+        }
+
+        assertNull(reversed)
+        assertNull(zeroTicks)
+    }
+
+    @Test
     fun `decode AimConfirm`() {
         val out = ByteStreams.newDataOutput()
         out.writeInt(2)

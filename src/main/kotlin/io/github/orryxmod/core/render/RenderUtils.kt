@@ -12,11 +12,27 @@ import org.lwjgl.opengl.GL12
 import org.lwjgl.opengl.GL13
 import org.lwjgl.opengl.GL14
 import org.lwjgl.opengl.GL20
+import java.nio.Buffer
 
 /**
  * 渲染工具函数
  */
 object RenderUtils {
+
+    /** LWJGL 2 的通用 glGetFloat 重载固定要求至少 16 个剩余元素。 */
+    internal const val GL_FLOAT_QUERY_CAPACITY = 16
+
+    internal fun createGlFloatQueryBuffer() = BufferUtils.createFloatBuffer(GL_FLOAT_QUERY_CAPACITY)
+
+    /** 避免在高版本 JDK 编译时引用 Java 9 才有的 NIO 协变返回签名。 */
+    internal fun clearBufferForJava8(buffer: Buffer) {
+        buffer.clear()
+    }
+
+    /** 避免在高版本 JDK 编译时引用 Java 9 才有的 NIO 协变返回签名。 */
+    internal fun flipBufferForJava8(buffer: Buffer) {
+        buffer.flip()
+    }
 
     /**
      * 安全的 GL 状态管理
@@ -131,10 +147,10 @@ object RenderUtils {
 
         companion object {
             fun capture(): GlStateSnapshot {
-                val colorBuffer = BufferUtils.createFloatBuffer(4)
+                val colorBuffer = createGlFloatQueryBuffer()
                 GL11.glGetFloat(GL11.GL_CURRENT_COLOR, colorBuffer)
 
-                val lineWidthBuffer = BufferUtils.createFloatBuffer(1)
+                val lineWidthBuffer = createGlFloatQueryBuffer()
                 GL11.glGetFloat(GL11.GL_LINE_WIDTH, lineWidthBuffer)
 
                 val activeTexture = GL11.glGetInteger(GL13.GL_ACTIVE_TEXTURE)
