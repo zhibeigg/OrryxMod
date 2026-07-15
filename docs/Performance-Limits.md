@@ -1,6 +1,6 @@
 # OrryxMod 性能上限
 
-本文档记录 1.4.5 的客户端性能保护默认值。所有世界、实体和 OpenGL 操作仍在 Minecraft 客户端主线程/渲染线程执行；这些配置用于限流，不会把线程敏感逻辑移到异步线程。
+本文档记录 1.5.11 的客户端性能保护默认值。所有世界、实体和 OpenGL 操作仍在 Minecraft 客户端主线程/渲染线程执行；这些配置用于限流，不会把线程敏感逻辑移到异步线程。
 
 ## Shockwave
 
@@ -53,7 +53,9 @@ ShockwaveFeature.performanceConfig = ShockwavePerformanceConfig(
 | 128–192 | 8 | 仅主线 | 32 |
 | >192 | 剔除 | 剔除 | 剔除 |
 
-其他默认值：低质量 Composite 抽样步长 2、最低质量步长 4、最大递归深度 8。实现硬限制为圆形细分 8–64、Composite 预算最多 4096、包围范围缓存最多 512 项、包围范围递归最多 16 层。
+其他默认值：低质量 Composite 抽样步长 2、最低质量步长 4、最大递归深度 8。实现硬限制为圆形细分 8–64、Composite 预算最多 4096、包围范围缓存最多 512 项、包围范围递归最多 16 层，ColliderManager 同时保留最多 200 个顶层 Collider。
+
+更新中的 Collider 在约 1 tick 插值窗口内走动态 BufferBuilder 绘制，不创建或复用静态 VBO；插值结束后按 collider revision 与当前 LOD 建立 VBO 缓存。更新、移除、clear、世界实例变化、断线和资源重载都会使相关缓存失效或全部释放。所有形状在进入绘制前同时执行最大距离与视锥裁剪；Oriented Capsule 的四元数旋转直接应用到胶囊线框顶点。
 
 ```kotlin
 ColliderFeature.renderConfig = ColliderRenderConfig(

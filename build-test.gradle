@@ -6,7 +6,7 @@ plugins {
 }
 
 group = 'io.github.orryxmod'
-version = '1.4.11'
+version = '1.5.11'
 
 repositories {
     mavenCentral()
@@ -49,6 +49,8 @@ sourceSets {
             include 'io/github/orryxmod/feature/bloom/BloomConfigManager.kt'
             include 'io/github/orryxmod/feature/bloom/BloomFairSelector.kt'
             include 'io/github/orryxmod/feature/collider/ColliderType.kt'
+            include 'io/github/orryxmod/feature/collider/ColliderInterpolator.kt'
+            include 'io/github/orryxmod/feature/collider/ColliderManager.kt'
             // Stubs - 使用 _stub 后缀避免与主代码冲突
             include 'stubs/**'
         }

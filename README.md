@@ -62,8 +62,10 @@ Orryx Client 是一个基于 Minecraft Forge 1.12.2 的客户端模组，专为�
 
 服务端可创建、更新和移除客户端调试线框：
 
-- Sphere、AABB、OBB、Capsule、Ray
-- 支持有限深度的 Composite 组合碰撞体
+- Sphere、AABB、OBB、Capsule、Ray，以及可选四元数朝向的 Oriented Capsule
+- ColliderUpdate 使用约 1 tick 的连续插值，OBB/Oriented Capsule 采用最短路径四元数插值
+- 支持有限深度的 Composite 组合碰撞体；结构稳定时递归插值，结构变化时安全切换
+- 静止线框使用 VBO 缓存，保留距离 LOD、视锥裁剪和 200 个 Collider 上限
 - 对坐标、尺寸、递归深度和总节点数执行安全校验
 
 ## 技术特性

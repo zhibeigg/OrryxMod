@@ -47,7 +47,8 @@ class OrryxPacketTest {
         assertSame(ColliderType.CAPSULE, ColliderType.fromWireId(3))
         assertSame(ColliderType.RAY, ColliderType.fromWireId(4))
         assertSame(ColliderType.COMPOSITE, ColliderType.fromWireId(5))
-        assertNull(ColliderType.fromWireId(6))
+        assertSame(ColliderType.ORIENTED_CAPSULE, ColliderType.fromWireId(6))
+        assertNull(ColliderType.fromWireId(7))
     }
 
     @Test

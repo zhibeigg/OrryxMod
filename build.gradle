@@ -234,6 +234,8 @@ tasks.register('buildAll') {
 
 tasks.withType(Jar).configureEach {
     destinationDirectory.set buildDir
+    // main 的 classes/resources 共用输出目录，内容相同的 refmap 会被 Jar 看到两次。
+    duplicatesStrategy = DuplicatesStrategy.EXCLUDE
 }
 
 sourceSets.each {

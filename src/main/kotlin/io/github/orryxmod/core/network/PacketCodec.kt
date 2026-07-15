@@ -387,6 +387,7 @@ object PacketCodec {
                 radius = input.readBoundedDouble("capsule radius", 0.01, 100.0),
                 halfHeight = input.readBoundedDouble("capsule halfHeight", 0.01, 100.0)
             )
+            ColliderType.ORIENTED_CAPSULE -> readOrientedCapsule(input)
             ColliderType.RAY -> readRay(input)
             ColliderType.COMPOSITE -> {
                 if (depth >= MAX_COMPOSITE_DEPTH) {
@@ -420,7 +421,8 @@ object PacketCodec {
             input.readFiniteFloat("OBB qx"),
             input.readFiniteFloat("OBB qy"),
             input.readFiniteFloat("OBB qz"),
-            input.readFiniteFloat("OBB qw")
+            input.readFiniteFloat("OBB qw"),
+            "OBB"
         )
 
         return ColliderShape.OBB(
@@ -434,6 +436,25 @@ object PacketCodec {
             qy = quaternion[1],
             qz = quaternion[2],
             qw = quaternion[3]
+        )
+    }
+
+    private fun readOrientedCapsule(input: DataInput): ColliderShape.OrientedCapsule {
+        val cx = input.readWorldCoordinate("oriented capsule cx")
+        val cy = input.readWorldCoordinate("oriented capsule cy")
+        val cz = input.readWorldCoordinate("oriented capsule cz")
+        val radius = input.readBoundedDouble("oriented capsule radius", 0.01, 100.0)
+        val halfHeight = input.readBoundedDouble("oriented capsule halfHeight", 0.01, 100.0)
+        val quaternion = normalizeQuaternion(
+            input.readFiniteFloat("oriented capsule qx"),
+            input.readFiniteFloat("oriented capsule qy"),
+            input.readFiniteFloat("oriented capsule qz"),
+            input.readFiniteFloat("oriented capsule qw"),
+            "Oriented capsule"
+        )
+        return ColliderShape.OrientedCapsule(
+            cx, cy, cz, radius, halfHeight,
+            quaternion[0], quaternion[1], quaternion[2], quaternion[3]
         )
     }
 
@@ -471,9 +492,9 @@ object PacketCodec {
         return doubleArrayOf(scaledX / magnitude, scaledY / magnitude, scaledZ / magnitude)
     }
 
-    private fun normalizeQuaternion(x: Float, y: Float, z: Float, w: Float): FloatArray {
+    private fun normalizeQuaternion(x: Float, y: Float, z: Float, w: Float, field: String): FloatArray {
         val maximum = maxOf(abs(x), abs(y), abs(z), abs(w)).toDouble()
-        require(maximum > NORMALIZATION_EPSILON) { "OBB quaternion must not be zero" }
+        require(maximum > NORMALIZATION_EPSILON) { "$field quaternion must not be zero" }
 
         val scaledX = x / maximum
         val scaledY = y / maximum

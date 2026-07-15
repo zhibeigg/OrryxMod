@@ -33,6 +33,14 @@ class PacketCodecTest {
         return PacketCodec.decode(out.toByteArray())
     }
 
+    private fun decodeHex(hex: String): OrryxPacket? {
+        val compact = hex.filterNot(Char::isWhitespace)
+        require(compact.length % 2 == 0)
+        return PacketCodec.decode(ByteArray(compact.length / 2) { index ->
+            compact.substring(index * 2, index * 2 + 2).toInt(16).toByte()
+        })
+    }
+
     private fun decodeColliderUpdate(
         type: ColliderType,
         shapeWriter: ByteArrayDataOutput.() -> Unit
@@ -554,6 +562,14 @@ class PacketCodecTest {
                 writeUTF("sphere")
                 writeInt(ColliderType.SPHERE.wireId)
                 writeSphereShape(cx = Double.POSITIVE_INFINITY)
+            },
+            decodePacket {
+                writeInt(19)
+                writeUTF("oriented-capsule")
+                writeInt(ColliderType.ORIENTED_CAPSULE.wireId)
+                writeDouble(0.0); writeDouble(0.0); writeDouble(0.0)
+                writeDouble(1.0); writeDouble(2.0)
+                writeFloat(Float.NaN); writeFloat(0f); writeFloat(0f); writeFloat(1f)
             }
         )
 
@@ -652,6 +668,11 @@ class PacketCodecTest {
             writeDouble(3.0); writeDouble(4.0); writeDouble(0.0)
             writeDouble(10.0)
         }
+        val orientedCapsule = decodeColliderUpdate(ColliderType.ORIENTED_CAPSULE) {
+            writeDouble(1.0); writeDouble(2.0); writeDouble(3.0)
+            writeDouble(4.0); writeDouble(5.0)
+            writeFloat(0f); writeFloat(0f); writeFloat(0f); writeFloat(2f)
+        }
         val composite = decodeColliderUpdate(ColliderType.COMPOSITE) {
             writeInt(1)
             writeCompositeChildHeader("child", ColliderType.SPHERE)
@@ -663,8 +684,64 @@ class PacketCodecTest {
         assertTrue(aabb?.shapeData is ColliderShape.AABB)
         assertTrue(obb?.shapeData is ColliderShape.OBB)
         assertTrue(capsule?.shapeData is ColliderShape.Capsule)
+        assertEquals(5.0, (capsule?.shapeData as ColliderShape.Capsule).halfHeight)
         assertTrue(ray?.shapeData is ColliderShape.Ray)
+        assertTrue(orientedCapsule?.shapeData is ColliderShape.OrientedCapsule)
+        assertEquals(5.0, (orientedCapsule?.shapeData as ColliderShape.OrientedCapsule).halfHeight)
         assertTrue(composite?.shapeData is ColliderShape.Composite)
+    }
+
+    @Test
+    fun `oriented capsule golden bytes preserve the approved wire layout`() {
+        val packet = decodeHex(
+            """
+            00000012 000167 00000006
+            00000001 00000002 00000003 00000004
+            3ff0000000000000 4000000000000000 4008000000000000
+            4010000000000000 4014000000000000
+            00000000 00000000 00000000 3f800000
+            """
+        ) as OrryxPacket.ColliderShow
+
+        assertEquals(18, packet.packetId)
+        assertEquals("g", packet.id)
+        assertEquals(listOf(1, 2, 3, 4), listOf(packet.r, packet.g, packet.b, packet.a))
+        val shape = packet.shapeData as ColliderShape.OrientedCapsule
+        assertEquals(1.0, shape.cx)
+        assertEquals(4.0, shape.radius)
+        assertEquals(5.0, shape.halfHeight)
+        assertEquals(1f, shape.qw)
+    }
+
+    @Test
+    fun `OBB quaternion uses four floats and Composite keeps child headers`() {
+        val obb = decodeColliderUpdate(ColliderType.OBB) {
+            writeDouble(1.0); writeDouble(2.0); writeDouble(3.0)
+            writeDouble(4.0); writeDouble(5.0); writeDouble(6.0)
+            writeFloat(0.5f); writeFloat(0.5f); writeFloat(0.5f); writeFloat(0.5f)
+        }
+        val composite = decodeColliderUpdate(ColliderType.COMPOSITE) {
+            writeInt(2)
+            writeUTF("box")
+            writeInt(ColliderType.AABB.wireId)
+            writeInt(10); writeInt(20); writeInt(30); writeInt(40)
+            writeDouble(1.0); writeDouble(2.0); writeDouble(3.0)
+            writeDouble(4.0); writeDouble(5.0); writeDouble(6.0)
+            writeUTF("capsule")
+            writeInt(ColliderType.CAPSULE.wireId)
+            writeInt(50); writeInt(60); writeInt(70); writeInt(80)
+            writeDouble(7.0); writeDouble(8.0); writeDouble(9.0)
+            writeDouble(2.5); writeDouble(3.5)
+        }
+
+        val obbShape = obb?.shapeData as ColliderShape.OBB
+        assertEquals(0.5f, obbShape.qx)
+        assertEquals(0.5f, obbShape.qw)
+        val children = (composite?.shapeData as ColliderShape.Composite).children
+        assertEquals(listOf("box", "capsule"), children.map { it.id })
+        assertEquals(listOf(10, 20, 30, 40), children[0].let { listOf(it.r, it.g, it.b, it.a) })
+        assertTrue(children[0].shape is ColliderShape.AABB)
+        assertEquals(3.5, (children[1].shape as ColliderShape.Capsule).halfHeight)
     }
 
     @Test
@@ -693,7 +770,7 @@ class PacketCodecTest {
     }
 
     @Test
-    fun `zero Ray direction and zero OBB quaternion are rejected`() {
+    fun `zero Ray direction and zero collider quaternions are rejected`() {
         val ray = decodeColliderUpdate(ColliderType.RAY) {
             writeDouble(0.0); writeDouble(0.0); writeDouble(0.0)
             writeDouble(0.0); writeDouble(0.0); writeDouble(0.0)
@@ -704,9 +781,15 @@ class PacketCodecTest {
             writeDouble(1.0); writeDouble(1.0); writeDouble(1.0)
             writeFloat(0f); writeFloat(0f); writeFloat(0f); writeFloat(0f)
         }
+        val orientedCapsule = decodeColliderUpdate(ColliderType.ORIENTED_CAPSULE) {
+            writeDouble(0.0); writeDouble(0.0); writeDouble(0.0)
+            writeDouble(1.0); writeDouble(1.0)
+            writeFloat(0f); writeFloat(0f); writeFloat(0f); writeFloat(0f)
+        }
 
         assertNull(ray)
         assertNull(obb)
+        assertNull(orientedCapsule)
     }
 
     @Test

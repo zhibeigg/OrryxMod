@@ -9,7 +9,8 @@ enum class ColliderType(val wireId: Int) {
     OBB(2),
     CAPSULE(3),
     RAY(4),
-    COMPOSITE(5);
+    COMPOSITE(5),
+    ORIENTED_CAPSULE(6);
 
     companion object {
         private val typesByWireId: Map<Int, ColliderType> = values().associateBy { it.wireId }
@@ -50,6 +51,13 @@ sealed class ColliderShape {
     data class Capsule(
         val cx: Double, val cy: Double, val cz: Double,
         val radius: Double, val halfHeight: Double
+    ) : ColliderShape()
+
+    /** 任意朝向胶囊体: 中心点 + 半径 + 半高 + 四元数旋转 */
+    data class OrientedCapsule(
+        val cx: Double, val cy: Double, val cz: Double,
+        val radius: Double, val halfHeight: Double,
+        val qx: Float, val qy: Float, val qz: Float, val qw: Float
     ) : ColliderShape()
 
     /** 射线: 起点 + 方向 + 长度 */

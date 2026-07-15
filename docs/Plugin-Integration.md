@@ -183,6 +183,7 @@ Collider 类型使用稳定的显式 wire ID：
 | Capsule | 3 |
 | Ray | 4 |
 | Composite | 5 |
+| Oriented Capsule | 6 |
 
 ### ColliderShow (ID: 18)
 
@@ -211,12 +212,15 @@ Collider 类型使用稳定的显式 wire ID：
 
 - Sphere：`cx, cy, cz, radius`，均为 Double。
 - AABB：`cx, cy, cz, hx, hy, hz`，均为 Double。
-- OBB：AABB 字段后追加 `qx, qy, qz, qw` 四个 Float；客户端会归一化四元数。
-- Capsule：`cx, cy, cz, radius, halfHeight`，均为 Double。
+- OBB：AABB 字段后追加 `qx, qy, qz, qw` 四个 **Float**；客户端会归一化四元数。
+- Capsule（type 3）：`cx, cy, cz, radius, halfHeight`，严格为 5 个 Double，朝向固定为世界 Y 轴。
 - Ray：`ox, oy, oz, dx, dy, dz, length`，均为 Double；方向必须非零，客户端会归一化。
-- Composite：先写 `count`，随后每个子项依次写 `childId、childType、r、g、b、a、childShape`。
+- Composite：先写 `count`，随后每个子项依次写 `UTF childId + Int childType + Int r + Int g + Int b + Int a + childShape payload`。子节点可继续使用 type 0-6。
+- Oriented Capsule（type 6）：`cx, cy, cz, radius, halfHeight` 五个 Double，随后为 `qx, qy, qz, qw` 四个 Float；客户端会归一化四元数。
 
-Composite 限制：每层最多 50 个直接子项、最大递归深度 3、单棵树最多 200 个节点。所有坐标和尺寸必须是有限值。
+Composite 限制：每层最多 50 个直接子项、最大递归深度 3、单棵树最多 200 个节点。所有坐标、尺寸和旋转分量必须是有限值。
+
+`ColliderUpdate` 会在客户端约 1 tick 内平滑过渡。Sphere、AABB、Capsule 和 Ray 使用线性插值（Ray 方向每帧重新归一化）；OBB 与 Oriented Capsule 使用最短路径归一化四元数插值。Composite 仅在对应子节点的 ID、类型和递归结构稳定时插值，否则立即切换到新结构。连续发送 Update 时，客户端会先冻结当前可见插值结果再设置新目标，因此不会回跳。
 
 ---
 
