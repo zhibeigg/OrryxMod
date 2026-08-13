@@ -402,6 +402,9 @@ assemble.dependsOn tasks.named('verifyReleaseJar')
 dependencyLocking {
     lockFile = rootProject.file('gradle/dependency-locks/release-dependencies.lock')
     lockAllConfigurations()
+    // ForgeGradle 会根据缓存状态把 MCP 映射作为临时模块加入或移出解析图；
+    // 映射版本已由 gradle.properties 固定，不应让该内部模块造成冷缓存锁状态漂移。
+    ignoredDependencies.add('net.minecraft:mappings_*')
 }
 
 tasks.withType(Jar).configureEach {
