@@ -31,7 +31,7 @@ class OrryxMod {
     companion object {
         const val MOD_ID = "orryxmod"
         const val MOD_NAME = "OrryxMod Client"
-        const val MOD_VERSION = "1.5.11"
+        const val MOD_VERSION = ModBuildInfo.VERSION
 
         lateinit var network: FMLEventChannel
 

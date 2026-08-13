@@ -5,192 +5,107 @@
 <h1 align="center">Orryx Client</h1>
 
 <p align="center">
-  Minecraft 1.12.2 客户端模组 — 提供服务端可控的视觉效果与辅助功能
+  面向 Minecraft 1.12.2 Forge 的客户端模组，为服务端提供可控的视觉效果、瞄准、导航和调试能力。
 </p>
 
----
+> 当前项目版本：**1.6.11**
 
-## 简介
+## 功能概览
 
-Orryx Client 是一个基于 Minecraft Forge 1.12.2 的客户端模组，专为服务端插件开发者设计。服务端可通过自定义网络协议远程控制客户端的视觉效果、瞄准辅助、自动寻路等功能，无需客户端玩家手动操作。所有功能均以模块化方式组织，支持独立启用/禁用。
+- **Aim**：点、方向和区域瞄准，以及 Texture、Circle、Model 指示器。
+- **Bloom**：实体泛光、强度/半径/优先级控制与 OptiFine 光影冲突保护。
+- **Effect**：残影、闪烁和实体投影效果。
+- **Navigation**：通过 Baritone API 执行服务端指定的路径规划。
+- **Shockwave**：圆形、矩形和扇形地面冲击波及方块碎裂动画。
+- **Collider**：Sphere、AABB、OBB、Capsule、Ray 和 Composite 调试线框。
+- **Mouse**：服务端控制客户端鼠标指针状态。
 
-## 功能模块
+完整网络协议见 [`docs/Plugin-Integration.md`](docs/Plugin-Integration.md)，性能边界见 [`docs/Performance-Limits.md`](docs/Performance-Limits.md)。
 
-### Aim — 技能辅助瞄准
+## 平台与工具链
 
-提供三种瞄准模式，由服务端发起请求，客户端完成瞄准后将结果回传：
+| 项目 | 版本/要求 |
+| --- | --- |
+| Minecraft | 1.12.2 |
+| Minecraft Forge | 14.23.5.2864 |
+| 构建 JDK | JDK 17 |
+| Gradle Wrapper | 7.6.1 |
+| 产物字节码 | Java 8（JVM target 1.8） |
+| 主要语言 | Kotlin 1.9.0 |
 
-- Point（点选模式）：选择视线命中的方块位置或最远落点
-- Direction（方向模式）：选择一个归一化朝向方向
-- Area（区域模式）：选择与画面指示器一致的区域中心点
-- 支持 Texture、Circle、Model 三种瞄准指示器，可配置颜色、透明度、半径与缩放
+JDK 17 用于运行 Gradle 和 ForgeGradle；构建脚本将 Java/Kotlin 编译目标设为 Java 8。运行游戏时仍应使用兼容 Minecraft 1.12.2/Forge 的 Java 8 环境。
 
-### Bloom — 泛光效果
+## 构建
 
-基于 OpenGL Shader 的实体泛光渲染系统：
+Windows：
 
-- 多 Pass 高斯模糊 + FBO 合成管线
-- 支持自定义颜色、强度、半径、优先级
-- 服务端可远程同步/更新/移除泛光配置
-- 自动检测 OptiFine 光影包，冲突时自动禁用
-
-### Effect — 视觉效果
-
-三种实体视觉效果：
-
-- Ghost（残影）：实体移动时产生半透明残影轨迹
-- Flicker（闪烁）：实体周期性透明度闪烁
-- EntityShow（实体投影）：在指定位置投影显示实体模型，支持淡入淡出
-
-### Mouse — 鼠标控制
-
-服务端可远程控制客户端鼠标指针的显示/隐藏，用于自定义 UI 交互场景。
-
-### Navigation — 自动寻路
-
-集成 Baritone API，服务端可指定目标坐标，客户端自动规划路径并移动到目的地。
-
-### Shockwave — 地面冲击波
-
-三种冲击波形状，附带方块破碎粒子动画：
-
-- Circle（圆形）：以指定半径扩散
-- Square（矩形）：指定长宽范围
-- Sector（扇形）：指定半径和角度
-
-### Collider — 碰撞体线框
-
-服务端可创建、更新和移除客户端调试线框：
-
-- Sphere、AABB、OBB、Capsule、Ray，以及可选四元数朝向的 Oriented Capsule
-- ColliderUpdate 使用约 1 tick 的连续插值，OBB/Oriented Capsule 采用最短路径四元数插值
-- 支持有限深度的 Composite 组合碰撞体；结构稳定时递归插值，结构变化时安全切换
-- 静止线框使用 VBO 缓存，保留距离 LOD、视锥裁剪和 200 个 Collider 上限
-- 对坐标、尺寸、递归深度和总节点数执行安全校验
-
-## 技术特性
-
-- 注解驱动的模块系统：`@Feature` 注解 + `FeatureBase` 基类，自动扫描注册
-- 自定义二进制网络协议：`orryxmod:main` 频道，20 种包类型，带有限值、长度、集合和递归预算限制
-- OpenGL Shader 管线：自定义 ShaderManager，管理 GLSL 着色器的编译、链接和渲染
-- Mixin 字节码注入：修改原版 HUD 渲染和 Baritone 设置
-- Kotlin 协程：异步处理耗时操作
-- 自定义事件总线：支持事件优先级和取消机制
-- 可调性能保护：Shockwave 分 tick 预算、Bloom 候选缓存、Collider 距离 LOD、实体追踪与 Display List 有界缓存
-
-## 构建方式
-
-前置要求：JDK 17（构建运行时）；产物字节码仍兼容 Java 8。
-
-```bash
-./gradlew shadowJar
+```powershell
+.\gradlew.bat clean shadowJar
 ```
 
-独立单元测试构建使用 Gradle 8.9，并关闭构建缓存：
+Linux/macOS：
+
+```bash
+./gradlew clean shadowJar
+```
+
+可发布模组 JAR 输出到 `builds/`。不要分发带 `-plain`、`-api` 或 `-api-source` 后缀的开发产物。
+
+## 测试
+
+主构建验证：
+
+```bash
+./gradlew unitTest shadowJar
+```
+
+不加载 Forge/Minecraft 的快速单元测试使用独立脚本；该脚本需要本机可用的 Gradle 8.9：
 
 ```bash
 gradle --no-build-cache -b build-test.gradle test
 ```
 
-构建产物输出到 `builds/` 目录。
+## 启动开发客户端
 
-## 安装方式
+首次运行会下载 Forge、Minecraft 映射和开发依赖：
 
-1. 安装 Minecraft Forge 1.12.2（版本 14.23.5.2864）
-2. 将构建产物 JAR 文件放入 `.minecraft/mods/` 文件夹
-3. 启动游戏
+```bash
+./gradlew runClient
+```
 
-## 命令列表
+开发实例文件位于本地 `run/` 目录，该目录不会提交。测试仅应连接到你有权限使用的服务器。
 
-所有命令以 `.` 为前缀，在游戏聊天栏中输入。
+## 安装
 
-### 通用命令
+1. 安装 Minecraft 1.12.2 和 Forge **14.23.5.2864**。
+2. 使用适用于该游戏版本的 Java 8 启动环境。
+3. 从 GitHub Releases 下载版本 `v1.6.11` 的唯一发行 JAR，并按需校验同一 Release 中的 `SHA256SUMS`。
+4. 将 JAR 放入 Minecraft 实例的 `mods/` 目录。
+5. 启动游戏。客户端与服务端插件应使用兼容的协议版本。
 
-| 命令 | 说明 |
-|------|------|
-| `.help` | 显示所有命令帮助 |
-| `.features` | 列出所有已注册 Feature 及状态 |
-| `.enable <id>` | 启用指定 Feature |
-| `.disable <id>` | 禁用指定 Feature |
+## 发布物与供应链信息
 
-### Aim
+`v*` 标签触发的 Release workflow 会验证标签与项目版本一致，构建并确认只有一个发行 JAR，同时生成：
 
-| 命令 | 说明 |
-|------|------|
-| `.aim [point\|dir\|area] [texture\|model\|circle] [scale] [maxDist]` | 启动瞄准并选择指示器 |
-| `.cancelaim` | 取消瞄准 |
+- `SHA256SUMS`：发行 JAR 的 SHA-256 摘要；
+- `dependencies.txt`：Gradle 依赖报告；
+- `sbom.spdx.json`：SPDX JSON 软件物料清单（SBOM）。
 
-### Bloom
+Pull Request 和 `master` 分支工作流只执行测试与构建验证，不读取发布凭据，也不会发布制品。
 
-| 命令 | 说明 |
-|------|------|
-| `.bloom [on\|off\|toggle\|status]` | 泛光开关/状态查询 |
-| `.bloomadd <name> [r] [g] [b] [strength] [radius] [priority]` | 添加泛光配置 |
-| `.bloomremove <name>` | 移除泛光配置 |
-| `.bloomclear` | 清除所有泛光配置 |
-| `.bloomlist` | 列出泛光配置 |
-| `.bloomtest [r] [g] [b] [strength]` | 对自己应用泛光测试 |
-| `.bloommax [n]` | 设置最大泛光实体数 |
+## 贡献
 
-### Effect
+提交问题或代码前请阅读 [`CONTRIBUTING.md`](CONTRIBUTING.md) 和 [`CODE_OF_CONDUCT.md`](CODE_OF_CONDUCT.md)。建议先搜索现有 Issue，并为行为变化补充测试和文档。Pull Request 必须通过 CI，合并由维护者审核决定。
 
-| 命令 | 说明 |
-|------|------|
-| `.ghost [ms] [density]` | 残影效果 |
-| `.flicker [ms] [alpha]` | 闪烁效果 |
-| `.shadow [ms] [offsetX]` | 添加影子分身 |
-| `.clearshadow` | 清除影子分身 |
-| `.entityshow [ms] [alpha] [fadeOut] [offsetX]` | 实体展示效果 |
+## 安全
 
-### Mouse
-
-| 命令 | 说明 |
-|------|------|
-| `.mouse [show\|hide\|toggle]` | 鼠标光标控制 |
-
-### Navigation
-
-| 命令 | 说明 |
-|------|------|
-| `.nav [x] [y] [z]` | 自动寻路到指定坐标 |
-| `.stopnav` | 停止导航 |
-
-### Shockwave
-
-| 命令 | 说明 |
-|------|------|
-| `.shock [r]` | 圆形冲击波（默认半径 5） |
-| `.shock2 [l] [w]` | 矩形冲击波 |
-| `.shock3 [r] [angle]` | 扇形冲击波 |
-
-### Collider
-
-| 命令 | 说明 |
-|------|------|
-| `.collider sphere [radius]` | 创建球体线框 |
-| `.collider aabb [hx] [hy] [hz]` | 创建轴对齐盒线框 |
-| `.collider obb [hx] [hy] [hz]` | 创建带朝向的盒线框 |
-| `.collider capsule [radius] [halfHeight]` | 创建胶囊体线框 |
-| `.collider ray [length]` | 创建视线射线 |
-| `.collider clear` | 清除所有碰撞体线框 |
-
-## 服务端插件对接
-
-- 完整频道、数据包字段、限制与 Collider wire ID：[`docs/Plugin-Integration.md`](docs/Plugin-Integration.md)
-- 客户端性能配置、默认值与硬上限：[`docs/Performance-Limits.md`](docs/Performance-Limits.md)
-
-## 开发依赖
-
-| 依赖 | 版本 | 用途 |
-|------|------|------|
-| Minecraft Forge | 14.23.5.2864 | 模组加载框架 |
-| Kotlin | 1.9.0 | 主要开发语言 |
-| Kotlin Coroutines | 1.7.2 | 异步处理 |
-| SpongePowered Mixin | 0.8.5 | 字节码注入 |
-| Baritone API | 1.2 | 路径规划 |
-| JOML | 1.10.7 | 3D 数学库 |
-| Reflections | 0.9.12 | 运行时注解扫描 |
+请不要通过公开 Issue 报告可利用的安全漏洞。请按照 [`SECURITY.md`](SECURITY.md) 中的私密报告流程提交，并说明受影响版本、复现步骤和影响范围。
 
 ## 许可证
 
-本项目基于 [MIT License](LICENSE) 开源。
+- OrryxMod 的**原创源代码**采用 [`MIT License`](LICENSE)。
+- Orryx 名称/PNG 素材由项目维护者持有或已取得合法授权，并按 [`docs/ASSET-LICENSES.md`](docs/ASSET-LICENSES.md) 中的条件提供；它们不因代码采用 MIT 而自动变为 MIT。
+- Bloom Shader 包含经合法授权使用的第三方/派生内容，继续受其原许可约束。
+- 打包依赖、开发依赖、Minecraft、Forge、Baritone、Mixin 等第三方组件均采用各自许可证，不由本项目的 MIT 许可证重新授权。
+
+详细归属与许可证路径见 [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md) 和 [`licenses/`](licenses/)。Minecraft、Minecraft Forge 和其他第三方名称及商标归各自权利人所有；本项目不是 Mojang Studios、Microsoft 或 Forge 的官方产品。

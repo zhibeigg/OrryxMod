@@ -1,0 +1,60 @@
+name: Bug 报告
+description: 报告可稳定复现的 OrryxMod 问题
+title: "[Bug]: "
+labels:
+  - bug
+body:
+  - type: markdown
+    attributes:
+      value: |
+        感谢反馈。安全漏洞请停止填写并按照 SECURITY.md 私密报告。
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: 提交前检查
+      options:
+        - label: 我已搜索现有 Issue，未找到重复报告。
+          required: true
+        - label: 这不是尚未修复的安全漏洞。
+          required: true
+        - label: 我使用的是未被修改的 OrryxMod 发布 JAR，或已说明修改内容。
+          required: true
+  - type: input
+    id: version
+    attributes:
+      label: OrryxMod 版本
+      placeholder: 例如 1.6.11
+    validations:
+      required: true
+  - type: input
+    id: environment
+    attributes:
+      label: 环境
+      description: Minecraft、Forge、Java、操作系统及相关模组/光影版本。
+      placeholder: Minecraft 1.12.2 / Forge 14.23.5.2864 / Java 8 / Windows 11
+    validations:
+      required: true
+  - type: textarea
+    id: description
+    attributes:
+      label: 问题描述
+      description: 实际发生了什么？预期行为是什么？
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: 复现步骤
+      placeholder: |
+        1. 启动……
+        2. 进入……
+        3. 发送/执行……
+        4. 观察……
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: 日志与补充材料
+      description: 请移除令牌、服务器地址、玩家隐私等敏感信息。可附崩溃报告、截图或最小配置。
+      render: shell

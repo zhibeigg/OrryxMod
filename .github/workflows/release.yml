@@ -1,0 +1,115 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    name: Build and publish release
+    if: github.repository == 'zhibeigg/OrryxMod'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - name: Check out tagged source
+        uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4.3.0
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Verify tag and project version
+        shell: bash
+        run: |
+          set -euo pipefail
+          tag="${GITHUB_REF_NAME}"
+          version="${tag#v}"
+          if [[ ! "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Release tag must match vA.B.C: $tag" >&2
+            exit 1
+          fi
+          declared=$(perl -ne 'print $1 if /^modVersion\s*=\s*([^[:space:]#]+)/' gradle.properties)
+          [[ "$declared" == "$version" ]] || { echo "gradle.properties version $declared does not match $tag" >&2; exit 1; }
+          grep -Fq "version = findProperty('modVersion')" build-test.gradle || { echo 'build-test.gradle must inherit modVersion' >&2; exit 1; }
+          grep -Fq '"version": "${version}"' src/main/resources/mcmod.info || { echo 'mcmod.info must use the ${version} build placeholder' >&2; exit 1; }
+          grep -Fq "## [$version]" CHANGELOG.md || { echo "CHANGELOG.md has no $version section" >&2; exit 1; }
+          grep -Fq "> 当前项目版本：**$version**" README.md || { echo "README.md does not declare $version" >&2; exit 1; }
+          printf 'VERSION=%s\n' "$version" >> "$GITHUB_ENV"
+
+      - name: Install Java 8 toolchain
+        uses: actions/setup-java@c1e323688fd81a25caa38c78aa6df2d33d3e20d9 # v4.8.0
+        with:
+          distribution: temurin
+          java-version: "8"
+
+      - name: Use JDK 17 for Gradle
+        uses: actions/setup-java@c1e323688fd81a25caa38c78aa6df2d33d3e20d9 # v4.8.0
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Configure Gradle cache
+        uses: gradle/actions/setup-gradle@017a9effdb900e5b5b2fddfb590a105619dca3c3 # v4.4.2
+        with:
+          cache-read-only: true
+
+      - name: Test and verify release build
+        run: ./gradlew --no-daemon --stacktrace clean unitTest verifyReleaseJar
+
+      - name: Select the unique release JAR
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p release
+          mapfile -t jars < <(printf '%s\n' builds/orryxmod-*.jar | grep -Ev -- '-(plain|api|api-source|sources|javadoc)\.jar$')
+          if [[ ${#jars[@]} -ne 1 || ! -f "${jars[0]}" ]]; then
+            printf 'Expected one release JAR, found %s:\n' "${#jars[@]}" >&2
+            printf '  %s\n' "${jars[@]:-<none>}" >&2
+            exit 1
+          fi
+          expected="orryxmod-${VERSION}.jar"
+          [[ "$(basename "${jars[0]}")" == "$expected" ]] || { echo "Expected $expected, got ${jars[0]}" >&2; exit 1; }
+          cp "${jars[0]}" "release/$expected"
+          jar tf "release/$expected" > release/jar-contents.txt
+          grep -q '^mcmod.info$' release/jar-contents.txt
+          grep -q '^io/github/orryxmod/' release/jar-contents.txt
+          class_file=$(grep '\.class$' release/jar-contents.txt | sed -n '1p')
+          [[ -n "$class_file" ]] || { echo 'Release JAR contains no class files' >&2; exit 1; }
+          unzip -p "release/$expected" "$class_file" > release/first-class.bin
+          od -An -t u1 -N 8 release/first-class.bin | grep -Eq '202[[:space:]]+254[[:space:]]+186[[:space:]]+190[[:space:]]+0[[:space:]]+0[[:space:]]+0[[:space:]]+52'
+          rm release/jar-contents.txt release/first-class.bin
+
+      - name: Generate checksum and dependency report
+        shell: bash
+        run: |
+          set -euo pipefail
+          (cd release && sha256sum "orryxmod-${VERSION}.jar" > SHA256SUMS)
+          ./gradlew --no-daemon dependencies > release/dependencies.txt
+
+      - name: Generate SPDX SBOM
+        uses: anchore/sbom-action@fbfd9c6c189226748411491745178e0c2017392d # v0.20.10
+        with:
+          path: ./release
+          file: ./release/sbom.spdx.json
+          format: spdx-json
+          upload-artifact: false
+          upload-release-assets: false
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@5be0e66d93ac7ed76da52eca8bb058f665c3a5fe # v2.4.2
+        with:
+          name: OrryxMod ${{ github.ref_name }}
+          generate_release_notes: true
+          fail_on_unmatched_files: true
+          files: |
+            release/orryxmod-${{ env.VERSION }}.jar
+            release/SHA256SUMS
+            release/dependencies.txt
+            release/sbom.spdx.json

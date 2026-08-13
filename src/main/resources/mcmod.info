@@ -2,12 +2,12 @@
   {
     "modid": "orryxmod",
     "name": "Orryx Client",
-    "description": "",
-    "version": "1.5.11",
-    "mcversion": "1.12.2",
+    "description": "服务端可控的 Minecraft 1.12.2 客户端视觉效果、瞄准、导航与调试模组。",
+    "version": "${version}",
+    "mcversion": "${mcversion}",
     "logoFile": "Orryx/orryx.png",
-    "url": "",
-    "updateUrl": "",
+    "url": "https://github.com/zhibeigg/OrryxMod",
+    "updateUrl": "https://github.com/zhibeigg/OrryxMod/releases",
     "authorList": [
       "zhibei"
     ],

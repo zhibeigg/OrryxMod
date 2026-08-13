@@ -5,8 +5,8 @@ plugins {
     id 'org.jetbrains.kotlin.jvm' version '1.9.0'
 }
 
-group = 'io.github.orryxmod'
-version = '1.5.11'
+group = findProperty('modGroup') ?: 'io.github.orryxmod'
+version = findProperty('modVersion') ?: 'unspecified'
 
 repositories {
     mavenCentral()

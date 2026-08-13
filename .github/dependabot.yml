@@ -1,0 +1,38 @@
+version: 2
+updates:
+  - package-ecosystem: gradle
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: "09:00"
+      timezone: Asia/Shanghai
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: deps
+    groups:
+      kotlin-and-tests:
+        patterns:
+          - "org.jetbrains.kotlin*"
+          - "org.junit*"
+          - "io.mockk*"
+      build-plugins:
+        dependency-type: development
+        patterns:
+          - "net.minecraftforge.gradle*"
+          - "org.spongepowered*"
+          - "com.github.jengelman.gradle.plugins*"
+    ignore:
+      - dependency-name: "net.minecraftforge:forge"
+      - dependency-name: "cabaletta:*"
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: "09:30"
+      timezone: Asia/Shanghai
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: ci

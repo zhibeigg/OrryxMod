@@ -1,12 +1,15 @@
 buildscript {
+    configurations.classpath {
+        resolutionStrategy.activateDependencyLocking()
+    }
     repositories {
         mavenCentral()
         maven { url = 'https://maven.minecraftforge.net/' }
         maven { url = 'https://repo.spongepowered.org/maven/' }
     }
     dependencies {
-        classpath 'net.minecraftforge.gradle:ForgeGradle:5.+'
-        classpath 'org.spongepowered:mixingradle:0.7-SNAPSHOT'
+        classpath 'net.minecraftforge.gradle:ForgeGradle:5.1.77'
+        classpath 'org.spongepowered:mixingradle:0.7.38'
         classpath 'com.github.jengelman.gradle.plugins:shadow:6.1.0'
     }
 }
@@ -24,7 +27,7 @@ apply plugin: 'com.github.johnrengelman.shadow'
 version = project.modVersion
 group = project.modGroup // 参考Maven命名规范: http://maven.apache.org/guides/mini/guide-naming-conventions.html
 archivesBaseName = 'orryxmod'
-buildDir project.build
+buildDir file(project.buildOutputDir)
 
 // 仓库
 repositories {
@@ -47,6 +50,13 @@ tasks.withType(org.jetbrains.kotlin.gradle.tasks.KotlinCompile).configureEach {
     kotlinJavaToolchain.toolchain.use(java8Launcher)
 }
 
+// Forge 1.12.2 的 LaunchWrapper 依赖 Java 8 的 URLClassLoader；Gradle 本身仍使用 JDK 17。
+tasks.withType(JavaExec).configureEach {
+    if (name.startsWith('run')) {
+        javaLauncher.set(java8Launcher)
+    }
+}
+
 // Minecraft 配置
 minecraft {
     // 映射可以随时更改，必须采用以下格式：
@@ -65,7 +75,7 @@ minecraft {
     // 可以根据需要调整、删除或复制这些配置。
     runs {
         client {
-            workingDirectory file('run')
+            workingDirectory file(findProperty('clientRunDir') ?: 'run')
 
             property 'fml.coreMods.load', 'io.github.orryxmod.OrryxCoreMod'
 
@@ -81,8 +91,8 @@ minecraft {
 
 // 依赖配置
 configurations {
-    jarLibs
-    onlyJarLibs
+    bundledLibraries
+    bundledRuntimeOnly
     configureEach {
         resolutionStrategy {
             force 'org.lwjgl.lwjgl:lwjgl-platform:2.9.4-nightly-20150209'
@@ -103,42 +113,35 @@ dependencies {
     // Forge
     minecraft "net.minecraftforge:forge:$minecraftVersion-$forgeVersion"
 
-    // Mixin - 使用 compileOnly 避免被 Forge 扫描，运行时由 TweakClass 加载
-    compileOnly('org.spongepowered:mixin:0.8.5') {
-        exclude module: 'commons-io'
-        exclude module: 'gson'
-        exclude module: 'guava'
-    }
+    // Mixin 由发布 JAR 自带，排除 Minecraft 已提供的通用库以避免冲突。
     annotationProcessor('org.spongepowered:mixin:0.8.5:processor') {
         exclude module: 'gson'
     }
-    // Mixin 运行时依赖（仅用于开发环境）
-    runtimeOnly('org.spongepowered:mixin:0.8.5') {
+    bundledLibraries('org.spongepowered:mixin:0.8.5') {
         exclude module: 'commons-io'
         exclude module: 'gson'
         exclude module: 'guava'
     }
 
-    // Kotlin
-    jarLibs("org.jetbrains.kotlin:kotlin-stdlib-jdk8:$kotlinVersion") {
+    // Kotlin 与工具库都打入发布 JAR，使模组无需额外安装 Kotlin loader。
+    bundledLibraries("org.jetbrains.kotlin:kotlin-stdlib-jdk8:$kotlinVersion") {
         exclude module: 'kotlin-stdlib-common'
         exclude module: 'annotations'
     }
-    jarLibs("org.jetbrains.kotlin:kotlin-reflect:$kotlinVersion") {
+    bundledLibraries("org.jetbrains.kotlin:kotlin-reflect:$kotlinVersion") {
         exclude module: 'kotlin-stdlib'
     }
-    // 工具库
-    jarLibs 'org.joml:joml:1.10.7'
+    bundledLibraries 'org.joml:joml:1.10.7'
 
     // 编译时依赖
     compileOnly "org.jetbrains.kotlin:kotlin-stdlib-common:$kotlinVersion"
     compileOnly 'org.jetbrains:annotations:23.0.0'
 
-    // Baritone
-    implementation('cabaletta:baritone-deobf-unoptimized-mcp-dev:1.2').setChanging(true)
-    onlyJarLibs('cabaletta:baritone-api:1.2').setChanging(true)
+    // Baritone 1.2 的反混淆开发构件用于编译，混淆运行构件仅用于发布打包。
+    implementation 'cabaletta:baritone-deobf-unoptimized-mcp-dev:1.2'
+    bundledRuntimeOnly 'cabaletta:baritone-api:1.2'
 
-    implementation configurations.jarLibs
+    implementation configurations.bundledLibraries
 }
 
 // Mixin 配置
@@ -148,22 +151,45 @@ mixin {
     config 'mixins.orryxmod.json'
 }
 
-// 资源处理
-processResources {
-    exclude '**/rawimagefiles'
-    from(sourceSets.main.resources.srcDirs) {
-        duplicatesStrategy = DuplicatesStrategy.INCLUDE
-        include 'mcmod.info'
-        expand version: version, 'mcversion': minecraftVersion
+// 从 gradle.properties 生成编译期版本常量，避免源码中维护第二份版本号。
+def generatedVersionSourceDir = layout.buildDirectory.dir('generated/sources/modVersion/kotlin')
+
+tasks.register('generateModVersionSource') {
+    inputs.property 'modVersion', project.version.toString()
+    outputs.dir generatedVersionSourceDir
+    doLast {
+        def outputFile = generatedVersionSourceDir.get().file('io/github/orryxmod/ModBuildInfo.kt').asFile
+        outputFile.parentFile.mkdirs()
+        outputFile.setText("""package io.github.orryxmod
+
+internal object ModBuildInfo {
+    const val VERSION = \"${project.version}\"
+}
+""", 'UTF-8')
     }
 }
 
-// 普通 JAR 仅用于开发检查，避免与可发布 Shadow JAR 同名。
-jar {
-    archiveClassifier.set 'plain'
+sourceSets.main.kotlin.srcDir generatedVersionSourceDir
+compileKotlin.dependsOn tasks.named('generateModVersionSource')
+
+// 资源处理
+processResources {
+    exclude '**/rawimagefiles'
+    duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+    inputs.property 'modVersion', project.version.toString()
+    inputs.property 'minecraftVersion', minecraftVersion
+    filesMatching('mcmod.info') {
+        expand version: project.version, mcversion: minecraftVersion
+    }
 }
 
-// Shadow JAR
+// 普通 JAR 只作为 Shadow 的输入，不作为发布产物保留。
+jar {
+    archiveClassifier.set 'plain'
+    destinationDirectory.set layout.buildDirectory.dir('intermediates')
+}
+
+// Shadow JAR：项目输出 + Mixin/Kotlin/JOML/Baritone 运行时，形成独立安装包。
 shadowJar {
     manifest.attributes(
         'Manifest-Version': 1.0,
@@ -175,8 +201,32 @@ shadowJar {
     )
 
     archiveClassifier.set ''
+    destinationDirectory.set layout.buildDirectory
+    from sourceSets.main.output
+    from(rootProject.file('LICENSE')) {
+        into 'META-INF'
+        rename { 'LICENSE-OrryxMod' }
+    }
+    from(rootProject.file('THIRD_PARTY_NOTICES.md')) {
+        into 'META-INF'
+    }
+    from(rootProject.file('docs/ASSET-LICENSES.md')) {
+        into 'META-INF'
+        rename { 'ASSET-LICENSES.md' }
+    }
+    from(rootProject.file('licenses')) {
+        into 'META-INF/licenses'
+        include '*.txt'
+    }
+    // Baritone 的服务提供者文件来自单一运行构件，按原样保留即可。
 
+    // Forge 1.12.2 的 ASM 5 无法解析 Java 9+ 多版本类或 module-info。
     exclude '**/module-info.class',
+            // Mixin 0.8.5 同时携带仅供现代 ModLauncher 使用的 Java 16 类；Forge 1.12.2 不使用这些入口。
+            'org/spongepowered/asm/launch/MixinLaunchPlugin.class',
+            'org/spongepowered/asm/launch/MixinTransformationService.class',
+            'org/spongepowered/asm/launch/platform/container/ContainerHandleModLauncherEx.class',
+            'org/spongepowered/asm/launch/platform/container/ContainerHandleModLauncherEx$SecureJarResource.class',
             'DebugProbesKt.bin',
             'META-INF/proguard/**',
             'META-INF/versions/**',
@@ -184,18 +234,8 @@ shadowJar {
             'META-INF/com.android.tools/**',
             'META-INF/*.version'
 
-    // 排除 Mixin JAR 文件，避免 Forge 将其作为模组解析
-    dependencies {
-        exclude(dependency('org.spongepowered:mixin:.*'))
-    }
-
-    minimize {
-        exclude dependency('cabaletta:baritone-api:.*')
-        exclude dependency('org.spongepowered:mixin:.*')
-        exclude dependency('org.jetbrains.kotlin:.*')
-    }
-
-    configurations = [project.configurations.jarLibs, project.configurations.onlyJarLibs]
+    // 不做 minimize：Mixin、Baritone 和 kotlin-reflect 均包含反射/服务加载入口。
+    configurations = [project.configurations.bundledLibraries, project.configurations.bundledRuntimeOnly]
 
     // 不 relocate kotlin，否则 kotlin-reflect 无法工作
     // relocate 'kotlin', 'io.github.orryxmod.shadow.kotlin'
@@ -232,16 +272,143 @@ tasks.register('buildAll') {
     dependsOn 'buildApi', 'buildApiSource', 'build'
 }
 
-tasks.withType(Jar).configureEach {
-    destinationDirectory.set buildDir
-    // main 的 classes/resources 共用输出目录，内容相同的 refmap 会被 Jar 看到两次。
-    duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+// ForgeGradle 的重混淆步骤会重写 ZIP 时间戳；最后统一排序并固定时间以保证字节可复现。
+tasks.register('normalizeReleaseJar') {
+    group 'build'
+    description '规范化重混淆 JAR 的条目顺序与时间戳'
+    dependsOn 'reobfShadowJar'
+    doLast {
+        def releaseJar = tasks.named('shadowJar').get().archiveFile.get().asFile
+        def normalizedJar = new File(releaseJar.parentFile, "${releaseJar.name}.normalized")
+        def source = new java.util.zip.ZipFile(releaseJar)
+        try {
+            def entries = java.util.Collections.list(source.entries()).findAll { !it.directory }.sort { left, right ->
+                def priority = { entry ->
+                    entry.name == 'META-INF/MANIFEST.MF' ? 0 : 1
+                }
+                priority(left) <=> priority(right) ?: left.name <=> right.name
+            }
+            normalizedJar.withOutputStream { fileOutput ->
+                def output = new java.util.zip.ZipOutputStream(new BufferedOutputStream(fileOutput))
+                try {
+                    entries.each { original ->
+                        def entry = new java.util.zip.ZipEntry(original.name)
+                        entry.time = 0L
+                        output.putNextEntry(entry)
+                        source.getInputStream(original).withCloseable { input ->
+                            output << input
+                        }
+                        output.closeEntry()
+                    }
+                } finally {
+                    output.close()
+                }
+            }
+        } finally {
+            source.close()
+        }
+        java.nio.file.Files.move(
+            normalizedJar.toPath(),
+            releaseJar.toPath(),
+            java.nio.file.StandardCopyOption.REPLACE_EXISTING
+        )
+    }
 }
 
-sourceSets.each {
-    def dir = layout.buildDirectory.file("sourcesSets/$it.name").get().asFile
-    it.output.resourcesDir = dir
-    it.java.outputDir = dir
+// 对最终、已重混淆的发布包进行强内容断言，防止再次产出空 Shadow JAR。
+tasks.register('verifyReleaseJar') {
+    group 'verification'
+    description '验证唯一发布 JAR 包含模组类、资源、Manifest、Mixin、Baritone 与许可证入口'
+    dependsOn 'normalizeReleaseJar'
+    doLast {
+        def releaseJar = tasks.named('shadowJar').get().archiveFile.get().asFile
+        if (!releaseJar.isFile()) {
+            throw new GradleException("发布 JAR 不存在: ${releaseJar}")
+        }
+
+        def releaseJars = fileTree(layout.buildDirectory) {
+            include '*.jar'
+        }.files
+        if (releaseJars.size() != 1 || releaseJars.first().canonicalFile != releaseJar.canonicalFile) {
+            throw new GradleException("发布目录必须只有一个主 JAR，实际为: ${releaseJars*.name.sort()}")
+        }
+
+        def requiredEntries = [
+            'META-INF/MANIFEST.MF',
+            'META-INF/LICENSE-OrryxMod',
+            'META-INF/THIRD_PARTY_NOTICES.md',
+            'META-INF/ASSET-LICENSES.md',
+            'META-INF/licenses/BARITONE-LGPL-3.0.txt',
+            'META-INF/licenses/MIXIN.txt',
+            'META-INF/licenses/JOML.txt',
+            'mcmod.info',
+            'mixins.orryxmod.json',
+            'mixins.orryxmod.refmap.json',
+            'io/github/orryxmod/OrryxMod.class',
+            'io/github/orryxmod/OrryxCoreMod.class',
+            'kotlin/Unit.class',
+            'org/spongepowered/asm/launch/MixinTweaker.class',
+            'baritone/api/BaritoneAPI.class',
+            'META-INF/services/baritone.api.IBaritoneProvider'
+        ]
+        def releaseContents = zipTree(releaseJar)
+        def missing = requiredEntries.findAll { required ->
+            releaseContents.matching { include required }.files.isEmpty()
+        }
+        if (!missing.isEmpty()) {
+            throw new GradleException("发布 JAR 缺少必要内容: ${missing}")
+        }
+
+        // Forge 1.12.2 必须在 Java 8 启动；检查全部 class，而不是只抽查第一个条目。
+        def incompatibleClasses = []
+        new java.util.zip.ZipFile(releaseJar).withCloseable { archive ->
+            java.util.Collections.list(archive.entries()).findAll { entry ->
+                !entry.directory && entry.name.endsWith('.class')
+            }.each { entry ->
+                archive.getInputStream(entry).withCloseable { input ->
+                    byte[] header = new byte[8]
+                    if (input.read(header) == 8 &&
+                        header[0] == (byte) 0xCA && header[1] == (byte) 0xFE &&
+                        header[2] == (byte) 0xBA && header[3] == (byte) 0xBE) {
+                        int major = ((header[6] & 0xFF) << 8) | (header[7] & 0xFF)
+                        if (major > 52) {
+                            incompatibleClasses << "${entry.name} (major ${major})"
+                        }
+                    }
+                }
+            }
+        }
+        if (!incompatibleClasses.isEmpty()) {
+            throw new GradleException("发布 JAR 包含高于 Java 8 的字节码: ${incompatibleClasses}")
+        }
+
+        def manifest = zipTree(releaseJar).matching { include 'META-INF/MANIFEST.MF' }.singleFile.text
+        ['MixinConfigs: mixins.orryxmod.json',
+         'TweakClass: org.spongepowered.asm.launch.MixinTweaker',
+         'FMLCorePlugin: io.github.orryxmod.OrryxCoreMod'].each { attribute ->
+            if (!manifest.contains(attribute)) {
+                throw new GradleException("Manifest 缺少属性: ${attribute}")
+            }
+        }
+        if (releaseJar.length() < 1_000_000L) {
+            throw new GradleException("发布 JAR 体积异常 (${releaseJar.length()} bytes)，可能为空包")
+        }
+    }
+}
+
+assemble.dependsOn tasks.named('verifyReleaseJar')
+
+// 对可解析依赖启用锁定；使用 --write-locks 更新锁文件。
+dependencyLocking {
+    lockFile = rootProject.file('gradle/dependency-locks/release-dependencies.lock')
+    lockAllConfigurations()
+}
+
+tasks.withType(Jar).configureEach {
+    preserveFileTimestamps = false
+    reproducibleFileOrder = true
+    // main 的 classes/resources 共用输出目录，内容相同的 refmap 会被 Jar 看到两次。
+    duplicatesStrategy = DuplicatesStrategy.EXCLUDE
 }
 
 // 测试配置
