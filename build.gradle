@@ -107,7 +107,7 @@ dependencies {
     testImplementation "io.mockk:mockk:1.13.10"
     testImplementation "org.jetbrains.kotlin:kotlin-test-junit5:$kotlinVersion"
     testImplementation 'com.google.guava:guava:31.1-jre'
-    testImplementation 'org.joml:joml:1.10.7'
+    testImplementation 'org.joml:joml:1.10.9'
     testImplementation "org.jetbrains.kotlin:kotlin-reflect:$kotlinVersion"
 
     // Forge
@@ -131,7 +131,7 @@ dependencies {
     bundledLibraries("org.jetbrains.kotlin:kotlin-reflect:$kotlinVersion") {
         exclude module: 'kotlin-stdlib'
     }
-    bundledLibraries 'org.joml:joml:1.10.7'
+    bundledLibraries 'org.joml:joml:1.10.9'
 
     // 编译时依赖
     compileOnly "org.jetbrains.kotlin:kotlin-stdlib-common:$kotlinVersion"
