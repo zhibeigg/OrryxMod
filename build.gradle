@@ -135,7 +135,7 @@ dependencies {
 
     // 编译时依赖
     compileOnly "org.jetbrains.kotlin:kotlin-stdlib-common:$kotlinVersion"
-    compileOnly 'org.jetbrains:annotations:23.0.0'
+    compileOnly 'org.jetbrains:annotations:26.1.0'
 
     // Baritone 1.2 的反混淆开发构件用于编译，混淆运行构件仅用于发布打包。
     implementation 'cabaletta:baritone-deobf-unoptimized-mcp-dev:1.2'
